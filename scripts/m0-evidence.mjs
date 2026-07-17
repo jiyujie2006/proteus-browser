@@ -471,8 +471,14 @@ function auditM0BuildEvidenceDocument(
           build?.provenance?.path,
         );
         const identity = physicalFileIdentity(provenancePath);
-        const previous = provenanceFiles.get(identity);
-        if (previous) {
+        const previous = identity === null
+          ? null
+          : provenanceFiles.get(identity);
+        if (identity === null) {
+          failures.push(
+            `${platform}: ${label} provenance filesystem does not expose a stable file identity`,
+          );
+        } else if (previous) {
           failures.push(
             `${platform}: ${label} provenance file is reused from ${previous}`,
           );
@@ -1187,25 +1193,32 @@ export function resolveArtifactFile(repo, path) {
   return real;
 }
 
-export function physicalFileIdentityKeyFromBigIntStat(path, stat) {
+export function physicalFileIdentityKeyFromBigIntStat(stat) {
   if (typeof stat?.dev !== 'bigint' || typeof stat?.ino !== 'bigint') {
     throw new TypeError('physical file identity requires BigInt stat fields');
   }
   return stat.ino === 0n
-    ? `path:${path}`
+    ? null
     : `inode:${stat.dev}:${stat.ino}`;
 }
 
 function physicalFileIdentity(path) {
   return physicalFileIdentityKeyFromBigIntStat(
-    path,
     lstatSync(path, { bigint: true }),
   );
 }
 
 export function filesSharePhysicalIdentity(first, second) {
-  return first === second
-    || physicalFileIdentity(first) === physicalFileIdentity(second);
+  if (first === second) return true;
+  try {
+    const firstIdentity = physicalFileIdentity(first);
+    const secondIdentity = physicalFileIdentity(second);
+    return firstIdentity === null
+      || secondIdentity === null
+      || firstIdentity === secondIdentity;
+  } catch {
+    return true;
+  }
 }
 
 function validBuildRecord(record) {

@@ -375,14 +375,32 @@ console.log('  ' + '─'.repeat(58));
   const unsafeInteger = 2n ** 53n;
   check(
     Number(unsafeInteger) === Number(unsafeInteger + 1n)
-      && physicalFileIdentityKeyFromBigIntStat('first', {
+      && physicalFileIdentityKeyFromBigIntStat({
         dev: 1n,
         ino: unsafeInteger,
-      }) !== physicalFileIdentityKeyFromBigIntStat('second', {
+      }) !== physicalFileIdentityKeyFromBigIntStat({
         dev: 1n,
         ino: unsafeInteger + 1n,
       }),
     'physical identity preserves adjacent filesystem IDs above Number precision',
+  );
+  check(
+    Number(unsafeInteger) === Number(unsafeInteger + 1n)
+      && physicalFileIdentityKeyFromBigIntStat({
+        dev: unsafeInteger,
+        ino: 1n,
+      }) !== physicalFileIdentityKeyFromBigIntStat({
+        dev: unsafeInteger + 1n,
+        ino: 1n,
+      }),
+    'physical identity preserves adjacent device IDs above Number precision',
+  );
+  check(
+    physicalFileIdentityKeyFromBigIntStat({
+      dev: 1n,
+      ino: 0n,
+    }) === null,
+    'unavailable filesystem identity fails closed instead of trusting a path',
   );
 }
 
