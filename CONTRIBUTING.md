@@ -6,17 +6,25 @@ clear process matters.
 
 ## Licensing of contributions
 
-By submitting a contribution you agree it is licensed under **Apache-2.0**
-(the project license), consistent with §5 of the license. We use the
-[Developer Certificate of Origin](https://developeropensource.org/) (DCO):
-sign off every commit with `git commit -s`, which adds a
+By submitting a separate first-party contribution, you agree that your
+licensable first-party portion is provided under **Apache-2.0** (the project
+license), consistent with §5 of the license. Material already governed by an
+upstream license remains under that license. We use the
+[Developer Certificate of Origin](https://developeropensource.org/) (DCO): sign
+off every commit with `git commit -s`, which adds a
 `Signed-off-by: Your Name <you@example.com>` line certifying you have the right
-to submit the work under the project's license.
+to submit the work under its applicable license.
 
 Contributions to the engine subtrees that modify MPL-2.0 (Firefox/Camoufox)
-files remain under MPL-2.0 for those files; new files you author are Apache-2.0
-unless they must be co-located with and derived from MPL sources. When in doubt,
-ask in the PR.
+files remain under MPL-2.0 for those files. Chromium files retain their
+applicable upstream licenses, including required notices. Patch files that quote
+or modify upstream source must preserve the target file's licensing context;
+they are not made Apache-2.0 merely by being stored in this repository. New,
+separate first-party files containing no upstream covered code are Apache-2.0.
+When in doubt, ask in the PR.
+
+The DCO sign-off is a certification that the contributor has the right to
+submit the work. It does not erase or relicense third-party code.
 
 ## Ground rules specific to this project
 

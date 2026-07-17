@@ -2,7 +2,7 @@ name: M0 local scaffold gate
 
 # The local scaffold gate. Everything here runs WITHOUT a Chromium
 # checkout — it validates the ruler (verification lab), the patch-series contract,
-# the declared-component license pre-check, schema, and dry-run tracking control
+# the repository license-policy check, schema, and dry-run tracking control
 # flow. A green run means the local scaffold is healthy; it does NOT satisfy the
 # hard M0 exit criteria in docs/06-roadmap.md.
 #
@@ -84,9 +84,8 @@ jobs:
       - name: Engine — bounded entrypoint-evidence verifier regressions
         run: npm run engine:evidence-tests
 
-      - name: Engine — declared-component manifest pre-check
-        working-directory: engine-chromium
-        run: node scripts/sbom.mjs
+      - name: Repository — license policy and current-scope manifest
+        run: npm run license:check
 
       - name: Engine — provenance document shape
         working-directory: engine-chromium

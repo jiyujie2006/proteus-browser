@@ -89,7 +89,9 @@ upstream-contribute to Camoufox for the Firefox engine rather than reinventing
 it, take the ungoogled-chromium patch methodology as prior art, and add the
 consistency engine, network system, product, verification lab, and sustainability
 model around them. This is collaboration, not competition. See
-[NOTICE](../NOTICE) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+[third-party licensing](10-third-party-licensing.md) and
+[CONTRIBUTING.md](../CONTRIBUTING.md). No upstream engine or patch payload is
+present in the current pre-alpha repository.
 
 ## Class D — Commercial fingerprinting (FingerprintJS Pro et al.)
 

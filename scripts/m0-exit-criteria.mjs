@@ -158,9 +158,14 @@ check('engine scaffold fails closed across supported Node platforms', () => {
   };
 });
 
-check('declared-component manifest license pre-check passes', () => {
-  const r = runNode('engine-chromium', ['scripts/sbom.mjs', '--json']);
-  return { ok: r.ok, detail: r.ok ? 'manifest stub allow-list passes (not a build-derived SBOM)' : 'manifest pre-check failed' };
+check('repository license policy + component metadata pass', () => {
+  const r = runNode('.', ['scripts/license-policy.mjs']);
+  return {
+    ok: r.ok,
+    detail: r.ok
+      ? 'canonical license + current-scope manifest checks pass (not release compliance)'
+      : 'repository license-policy check failed',
+  };
 });
 
 check('demo provenance document has an in-toto/SLSA shape', () => {

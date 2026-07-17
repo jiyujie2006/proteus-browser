@@ -58,7 +58,9 @@ rebase Chromium forever — is exactly how the graveyard filled up.
 
 - **License:** Apache-2.0 for our code (patent grant matters for a
   circumvention-adjacent project — [adr/0001](adr/0001-license-apache-2.md)).
-  Engine subtrees carry their upstream licenses ([NOTICE](../NOTICE)).
+  Future engine distributions retain all applicable upstream licenses and bind
+  an artifact-specific notice bundle
+  ([third-party licensing](10-third-party-licensing.md)).
 - **Contribution:** DCO sign-off, Apache-2.0 inbound=outbound
   ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 - **Decision-making:** ADRs (`docs/adr/`) record load-bearing decisions in the

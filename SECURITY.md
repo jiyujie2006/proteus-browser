@@ -2,12 +2,15 @@
 
 ## Two kinds of "security" for this project
 
-Proteus has an unusual dual security surface:
+Proteus has an unusual dual security surface. The current pre-alpha implements
+the signed-config core, verification lab, and build/evidence tooling; it does not
+yet ship a modified browser engine, Manager, profile store, or sync service.
 
-1. **Classic software security** — Proteus handles highly sensitive data
-   (cookies, sessions, credentials-in-browser) and ships a modified browser
-   engine. Memory-safety, sandbox integrity, encryption-at-rest, and the sync
-   protocol are all in scope.
+1. **Classic software security** — current scope includes config
+   signing/verification, local browser-driving boundaries, parsers, and build
+   evidence. The target product will also handle highly sensitive browser data
+   such as cookies and sessions; at that point memory safety, sandbox integrity,
+   encryption at rest, and the sync protocol enter implemented scope.
 2. **Detection resistance** — a "vulnerability" here can also mean a *fingerprint
    leak or inconsistency* that lets a site distinguish a Proteus profile. These
    are tracked as defects against the threat model and verification lab, not

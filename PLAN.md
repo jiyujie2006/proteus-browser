@@ -151,9 +151,12 @@ publicly, and reproducible builds prove we mean it. Detail:
 ## Legal & license
 
 Apache-2.0 for our code (patent grant matters for a circumvention-adjacent
-project — [`docs/adr/0001`](docs/adr/0001-license-apache-2.md)); engine binaries
-carry their upstream licenses ([`NOTICE`](NOTICE)). Dual-use tool for lawful use;
-honest about it ([`ACCEPTABLE_USE.md`](ACCEPTABLE_USE.md)).
+project — [`docs/adr/0001`](docs/adr/0001-license-apache-2.md)). The current
+repository ships no engine binary; future artifacts must carry an
+artifact-derived license/notice bundle
+([`docs/10-third-party-licensing.md`](docs/10-third-party-licensing.md)).
+[`ACCEPTABLE_USE.md`](ACCEPTABLE_USE.md) states project intent but is not part of
+the license and adds no use restriction.
 
 ## Status & next step
 

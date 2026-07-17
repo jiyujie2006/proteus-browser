@@ -135,7 +135,14 @@ imply that the corresponding milestone has passed: in particular,
 
 Proteus's own code is licensed under **Apache-2.0** (chosen over MIT for its
 explicit patent grant — see [`docs/adr/0001-license-apache-2.md`](docs/adr/0001-license-apache-2.md)).
-The engine binaries are Derivative Works of Chromium (BSD-3 + others) and
-Firefox/Camoufox (MPL-2.0); those licenses are carried forward per
-[`NOTICE`](NOTICE). Contributions are accepted under the terms in
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+The current repository does not contain or distribute Chromium, Firefox,
+Camoufox, or modified engine binaries. Future engine distributions will remain
+subject to every applicable upstream and bundled-component license; the
+artifact-specific process is documented in
+[`docs/10-third-party-licensing.md`](docs/10-third-party-licensing.md).
+[`NOTICE`](NOTICE) contains only current attribution notices. Contributions are
+accepted under the terms in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+[`ACCEPTABLE_USE.md`](ACCEPTABLE_USE.md) is a non-binding statement of project
+intent. It is not part of the Apache-2.0 license and does not narrow the rights
+granted by that license.

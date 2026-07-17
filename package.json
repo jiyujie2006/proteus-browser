@@ -21,9 +21,10 @@
     "engine:scaffold-honesty": "node engine-chromium/test/scaffold-honesty.mjs",
     "engine:evidence-tests": "node engine-chromium/test/m0-evidence.mjs",
     "engine:sbom": "node engine-chromium/scripts/sbom.mjs",
+    "license:check": "node scripts/license-policy.mjs",
     "engine:provenance": "node engine-chromium/scripts/provenance.mjs --demo",
     "engine:track": "node engine-chromium/tracking-bot/pipeline.mjs --dry-run",
-    "test": "npm run verify:selftest && npm run verify:tests && npm run engine:check-series && npm run engine:scaffold-honesty && npm run engine:evidence-tests && npm run engine:sbom && npm run m1a && npm run m0:local"
+    "test": "npm run verify:selftest && npm run verify:tests && npm run engine:check-series && npm run engine:scaffold-honesty && npm run engine:evidence-tests && npm run license:check && npm run m1a && npm run m0:local"
   },
   "engines": {
     "node": ">=22"

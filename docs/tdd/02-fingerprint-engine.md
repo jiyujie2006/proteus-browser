@@ -205,8 +205,9 @@ catalog and update system below describe the target M4 dataset.
 - **Optional** opt-in aggregation from Proteus's own users under **differential
   privacy** (see §8 and [07-security-privacy.md](../07-security-privacy.md)) — no
   raw fingerprints ever collected; only DP-aggregated distribution updates.
-- Every bundled artifact's license verified for redistribution (fonts especially;
-  see [NOTICE](../../NOTICE)).
+- Every bundled artifact's license verified for redistribution (fonts
+  especially; see
+  [third-party licensing](../10-third-party-licensing.md)).
 
 **Freshness (Principle VIII):** distributions drift as new GPUs/OSes/browser
 versions appear. Bundles are refreshed out-of-band and signed; the engine records

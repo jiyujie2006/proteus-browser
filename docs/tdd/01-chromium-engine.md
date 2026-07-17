@@ -222,9 +222,10 @@ satisfy. Values always come from the config; noise always derives from
   host's.
 - **Rule (V1):** font set ⊇ OS core set and ⊆ OS superset; metrics-based probing
   and `local()` probing agree; no host-font leakage.
-- **Risk:** licensing of bundled fonts must be checked per font (see NOTICE);
-  where a font can't be redistributed, use a metric-compatible substitute or omit
-  and adjust the presented set coherently.
+- **Risk:** licensing of bundled fonts must be checked per font and packaged
+  byte (see [third-party licensing](../10-third-party-licensing.md)); where a
+  font can't be redistributed, use a metric-compatible substitute or omit and
+  adjust the presented set coherently.
 
 ### 4.9 Timezone & locale
 - **Fields:** `Intl.DateTimeFormat().resolvedOptions().timeZone`,

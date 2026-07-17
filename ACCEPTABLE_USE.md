@@ -7,6 +7,11 @@ This document states the project's position. It is not legal advice, and it does
 not create any warranty or obligation on the part of the authors (see the
 Apache-2.0 "AS IS" disclaimer).
 
+This document is **not part of the Apache-2.0 license**, is not a condition of
+using or redistributing the software, and does not add restrictions to the
+rights granted by that license. It is a non-binding statement of project intent.
+Any separately operated hosted service may publish its own service terms.
+
 ## Intended, encouraged uses
 
 - **Privacy and anti-tracking research** — studying and resisting browser

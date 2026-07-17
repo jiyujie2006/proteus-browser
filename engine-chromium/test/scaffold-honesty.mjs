@@ -214,9 +214,23 @@ try {
     const properties = Object.fromEntries(
       document.metadata.properties.map(({ name, value }) => [name, value]),
     );
-    assert.equal(properties['proteus:document-kind'], 'component-manifest-stub');
+    assert.equal(properties['proteus:document-kind'], 'repository-component-manifest-stub');
     assert.equal(properties['proteus:build-derived'], 'false');
+    assert.match(properties['proteus:scope-note'], /Current first-party repository components only/);
     assert.match(human, /NOT a production SBOM/);
+    const componentNames = document.components.map(({ name }) => name);
+    assert.deepEqual(componentNames, [
+      'proteus-fingerprint',
+      'proteus-verify-lab',
+      'proteus-chromium-scaffold',
+      'proteus-repository-tooling',
+    ]);
+    assert.ok(
+      document.components.every(({ licenses }) => (
+        licenses.length === 1 && licenses[0].license.id === 'Apache-2.0'
+      )),
+      'current first-party components must declare Apache-2.0 only',
+    );
   });
 
   console.log(`\n${passed} scaffold honesty checks passed.`);

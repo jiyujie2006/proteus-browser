@@ -26,7 +26,7 @@
 | Reproducible-build flags + provenance | `scripts/provenance.mjs`, `build/args.gn` | **Runs now**; real mode requires an ordinary artifact file, while explicit `--demo` hashes a documented sentinel |
 | Signed entrypoint-evidence layer | `scripts/assemble-m0-evidence.mjs`, `../scripts/m0-evidence.mjs` | Implementation and fixture regressions run; real assembly awaits governed pinned-public-key provisioning and genuine build outputs, and remains below the full-bundle, builder-attested hard-M0 assurance level |
 | Version-tracking bot pipeline | `tracking-bot/pipeline.mjs` | **Runs now** in `--dry-run`; a state-machine scaffold, not proof that real stages integrate |
-| Component manifest / license pre-check | `scripts/sbom.mjs` | **Runs now** — emits a clearly marked CycloneDX-shaped manifest stub, not a build-derived production SBOM |
+| Repository component metadata check | `scripts/sbom.mjs` | **Runs now** — names only current first-party components in a clearly marked CycloneDX-shaped stub; not a production SBOM or redistribution decision |
 | Scaffold honesty regression test | `test/scaffold-honesty.mjs` (`.sh` compatibility wrapper) | **Runs now** — eight cross-platform checks cover placeholder rejection, provenance input validation, digest shape, and SBOM UUID/stub markers |
 
 "Runs now" means only that the command executes in this environment without a
@@ -52,8 +52,11 @@ integration or a successful Chromium build.
 - The formal M0 release public key has not been provisioned in the repository.
   Tests create isolated fixture keys; they do not stand in for release-key
   governance.
-- `scripts/sbom.mjs` inventories declared top-level components only. A release
-  still requires a build-derived dependency SBOM and its release gate.
+- `scripts/sbom.mjs` inventories current first-party repository components only
+  and deliberately excludes planned engines and external packages. A release
+  still requires the artifact-derived SBOM, exact notices, and accompanying
+  materials described in
+  [`docs/10-third-party-licensing.md`](../docs/10-third-party-licensing.md).
 
 ## Layout
 
@@ -71,7 +74,7 @@ engine-chromium/
 │  ├─ apply-patches.sh              POSIX compatibility wrapper
 │  ├─ build.sh                      gn + ninja + sccache
 │  ├─ provenance.mjs                reproducible-build manifest + SLSA skeleton (runs now)
-│  └─ sbom.mjs                      CycloneDX SBOM stub (runs now)
+│  └─ sbom.mjs                      current-scope component stub (runs now)
 ├─ test/
 │  ├─ scaffold-honesty.mjs          cross-platform fail-closed regression checks
 │  └─ scaffold-honesty.sh           POSIX compatibility wrapper
@@ -105,7 +108,7 @@ node scripts/provenance.mjs \
 PROTEUS_CHROMIUM_SRC=/path/to/chromium \
   node scripts/apply-patches.mjs --allow-placeholders
 
-# Emit the declared-component manifest stub (not a production SBOM):
+# Emit the current-repository component stub (not a production SBOM):
 node scripts/sbom.mjs
 
 # Run the eight cross-platform scaffold honesty regression checks:

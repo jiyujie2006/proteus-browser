@@ -19,9 +19,9 @@ attracting patent-based legal pressure.
 1. **MIT** — shortest, most familiar, maximally permissive. **No explicit patent
    grant.**
 2. **Apache-2.0** — permissive, but adds: an **explicit patent license** from
-   contributors, a **patent-retaliation** clause (your patent license terminates
-   if you sue the project for patent infringement over it), explicit
-   **trademark** handling, and a requirement to state changes / keep NOTICE.
+   contributors for patent claims necessarily infringed by their contributions,
+   a **patent-retaliation** clause, explicit trademark boundaries, and
+   redistribution requirements for changed files and applicable NOTICE content.
 
 ## Decision
 
@@ -29,15 +29,18 @@ attracting patent-based legal pressure.
 
 ## Rationale
 
-- **Explicit patent grant.** Contributors grant a patent license to their
-  contributions. For a project in a patent-dense, circumvention-adjacent space,
-  this materially reduces downstream legal risk for users and integrators vs.
-  MIT's silence on patents.
+- **Explicit, bounded patent grant.** Contributors grant a patent license for
+  claims necessarily infringed by their contributions. This is stronger than
+  MIT's silence, but it is not patent clearance, a third-party patent license,
+  or indemnity.
 - **Patent-retaliation clause** deters patent aggression against the project.
-- **Trademark clarity** matters because we nominatively use "Chromium,"
-  "Firefox," etc., and will have our own mark; Apache-2.0's §6 is explicit.
-- **NOTICE mechanism** fits our need to carry forward Chromium/Firefox/Camoufox
-  attributions cleanly ([NOTICE](../../NOTICE)).
+- **Trademark boundary clarity** matters because we nominatively refer to
+  upstream products. Apache-2.0 §6 does not grant trademark rights and does not
+  establish or clear a Proteus mark; trademark review remains separate.
+- **NOTICE mechanism** preserves attribution notices that actually apply to the
+  distributed work. Planned dependencies and release instructions belong in
+  [the third-party licensing plan](../10-third-party-licensing.md), not in the
+  current [NOTICE](../../NOTICE).
 - **Ecosystem precedent.** Brave, ungoogled-chromium, and many browser-adjacent
   projects operate comfortably under permissive licensing alongside Chromium's
   BSD; Apache-2.0 is well-understood by enterprises (an audience for our
@@ -48,19 +51,24 @@ relative to the patent-grant benefit.
 
 ## Consequences
 
-- First-party files carry an Apache-2.0 header; the repo has [LICENSE](../../LICENSE)
-  and [NOTICE](../../NOTICE).
-- Inbound contributions are Apache-2.0 via DCO sign-off
+- The repository-level [LICENSE](../../LICENSE), package metadata, and
+  documentation identify first-party Proteus work as Apache-2.0. New source
+  files should also use `SPDX-License-Identifier: Apache-2.0` when their syntax
+  permits; generated data and strict fixtures may rely on repository- or
+  directory-level metadata.
+- Inbound first-party contributions are Apache-2.0 via DCO sign-off
   ([CONTRIBUTING.md](../../CONTRIBUTING.md)).
-- Engine subtree files that are Derivative Works of MPL-2.0 (Camoufox/Firefox)
-  **remain MPL-2.0**; BSD-3 Chromium files remain under their terms. Apache-2.0
-  applies to *our* new code. This mixed-licensing is normal and compatible; the
-  NOTICE and per-file headers make it explicit.
-- Downstream redistributors must reproduce LICENSE + NOTICE and mark changes —
-  handled by our release tooling ([tdd/05](../tdd/05-build-and-tracking.md) §5).
+- Engine subtree files derived from MPL-2.0 code **remain MPL-2.0**; Chromium
+  files and patch payloads retain the applicable upstream terms. Apache-2.0
+  applies to separate first-party code that contains no upstream covered code.
+- Each future binary distribution must carry an artifact-derived component
+  inventory, the exact required license texts and notices, and any corresponding
+  source-availability material. This is a release gate to be implemented, not a
+  capability the current scaffold claims to provide
+  ([tdd/05](../tdd/05-build-and-tracking.md) §5).
 
 ## Notes
 
-MPL-2.0 (Firefox/Camoufox) is file-level copyleft: modifications to MPL files
-must be shared, which we do (and contribute upstream). Apache-2.0 for our own
-code and MPL-2.0 for modified engine files coexist without conflict.
+MPL-2.0 is file-level copyleft: when Proteus eventually distributes modified
+MPL-covered files, their source and notices must be made available as required.
+No Firefox/Camoufox source or binary is present in the current repository.

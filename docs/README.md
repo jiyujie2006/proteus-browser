@@ -18,6 +18,7 @@ record. Read them in roughly this order.
 | 07 | [security-privacy.md](07-security-privacy.md) | Data-at-rest, key management, sandbox stance, telemetry stance |
 | 08 | [sustainability.md](08-sustainability.md) | How the project stays alive: open-core, governance, funding the treadmill |
 | 09 | [glossary.md](09-glossary.md) | Terms of art: JA3/JA4, Client Hints, persona, etc. |
+| 10 | [third-party-licensing.md](10-third-party-licensing.md) | Current license scope and future artifact compliance gates |
 
 ## Technical Design Documents (`tdd/`)
 
