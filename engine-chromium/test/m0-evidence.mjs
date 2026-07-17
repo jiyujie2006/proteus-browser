@@ -1078,6 +1078,7 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
 });
 
 withFixture(({ repo }) => {
+  const before = patchSeriesSha256(repo);
   const future = join(
     repo,
     'engine-chromium',
@@ -1085,10 +1086,16 @@ withFixture(({ repo }) => {
     'unreferenced-future-specification',
   );
   writeFileSync(future, '# future-only fixture bytes\n');
+  const after = patchSeriesSha256(repo);
+  check(
+    before === after,
+    'future backlog bytes do not change the active patch-series hash',
+  );
   const audit = verifyM0BuildEvidence(repo);
   check(
     audit.ok,
-    'future backlog bytes do not invalidate evidence for an already-built M0 active series',
+    'future backlog bytes do not invalidate evidence for an already-built M0 active series'
+      + (audit.ok ? '' : `: ${audit.failures.join('; ')}`),
   );
 });
 
