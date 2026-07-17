@@ -107,7 +107,13 @@ function check(name, body) {
     failed += 1;
     console.log(`  ❌ ${name}: ${error.message}`);
   } finally {
-    if (fixture) rmSync(fixture.repo, { force: true, recursive: true });
+    if (fixture) {
+      rmSync(fixture.repo, {
+        force: true,
+        maxRetries: 5,
+        recursive: true,
+      });
+    }
   }
 }
 

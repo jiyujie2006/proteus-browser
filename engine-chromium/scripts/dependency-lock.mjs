@@ -670,7 +670,7 @@ export function auditNestedGitDependencies(
       );
     }
 
-    if (realpathSync(topLevel) !== realCheckout) {
+    if (relative(realCheckout, realpathSync(topLevel)) !== '') {
       throw new TypeError(`nested Git dependency ${dependency.path} is not a repository root`);
     }
     if (origin !== dependency.url) {
