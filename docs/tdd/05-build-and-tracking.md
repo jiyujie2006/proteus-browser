@@ -32,6 +32,13 @@ automated, not an afterthought.
 (or `reclient` where available) for aggressive compile caching. Cross-compilation
 targets Win/mac/Linux; codesigning/notarization per platform on release.
 
+The hard-M0 A/B evidence profile is intentionally stricter than that target
+throughput configuration: its immutable contract sets `cachePolicy=disabled`
+and rejects `cc_wrapper`. A cache may be enabled only after its exact binary,
+configuration, namespace, and resolved inputs are added to a reviewed contract;
+until then it would be an undeclared shared input between supposedly independent
+rebuilds.
+
 **Infrastructure options (decided by budget, see sustainability):**
 - Large CI runners (hosted) for occasional builds, or
 - A self-hosted build farm for frequent rebases (Chromium is enormous; cache hit
@@ -39,16 +46,20 @@ targets Win/mac/Linux; codesigning/notarization per platform on release.
 
 **Artifacts:** per-platform engine bundles (engine + bundled fonts + default
 signed dataset), each with a manifest recording: Chromium base version, patch
-series hash, dataset version, toolchain versions, and build flags.
+active-series digest, dataset version, toolchain versions, and effective build
+flags.
 
 ## 3. Patch management
 
-The patch series from [tdd/01](01-chromium-engine.md) is the input.
+The active patch series from [tdd/01](01-chromium-engine.md) is the build input.
+Future milestone specifications are catalogued separately.
 
 ```
 patches/
-  series                 # ordered, layered (layer0/1/2)
-  <layerN>/NNNN-*.patch   # each with Rationale/Surface/Upstream-risk/Tests header
+  series                 # ordered active input; applied and artifact-hashed
+  backlog/m1.series      # validated specification catalog; never applied in M0
+  backlog/m3.series      # validated specification catalog; never applied in M0
+  <layerN>/NNNN-*.patch   # rationale/surface/risk/tests/milestone/status headers
 ```
 
 - **Small, single-purpose patches** keyed to a surface, so a rebase conflict is
@@ -57,6 +68,13 @@ patches/
   a given Chromium refactor, so it can pre-warn maintainers.
 - A `quilt`/`git-rebase`-style flow (methodology from ungoogled-chromium/Camoufox)
   keeps the series maintainable.
+- Catalog validation checks active and backlog files for duplicates, orphans,
+  target milestones, and required metadata. Apply/rebase/provenance consume only
+  `series`; changing backlog bytes cannot change an already-built artifact's
+  active-series digest.
+- Promotion is an atomic reviewed move from one backlog into the active series,
+  accompanied by real hunks, guarding tests, licensing review, and a deliberate
+  `PATCH_PROFILE` contract update.
 
 ## 4. The version-tracking bot (the automation that saves the project)
 
@@ -65,13 +83,13 @@ A scheduled pipeline:
 ```
 1. WATCH     new Chromium stable tag detected
 2. SYNC      fetch the new source at that tag (depot_tools)
-3. REBASE    apply patch series in order
+3. REBASE    apply active patch series in order
                 ├─ all apply cleanly ─────────────▶ continue
                 └─ conflict ─▶ localize to first failing patch,
                                open an issue tagged with the surface +
                                Upstream-risk note + the conflicting hunk,
                                ping the surface owner. STOP.
-4. BUILD     gn+ninja+sccache, all platforms
+4. BUILD     gn+ninja on the hard evidence profile, all platforms
 5. VERIFY    run the full verification-lab suite (tdd/06) headless
                 ├─ all green ─────────────────────▶ continue
                 └─ any probe regressed ─▶ open an issue with the exact
@@ -131,7 +149,8 @@ public source.
 
 ## 8. CI gates (what must pass before anything ships)
 
-1. Patch series applies on the target Chromium tag.
+1. The declared active patch profile applies on the exact pinned Chromium
+   commit; the official tag resolves to that commit.
 2. Builds succeed on all platforms.
 3. **Verification-lab suite green** (V1–V5 probes) — no regressions vs. last
    release (Principle VII).
@@ -146,7 +165,7 @@ product.
 
 | With | Contract |
 |---|---|
-| Engine (tdd/01) | Consumes the patch series; requires rationale/risk/test headers |
+| Engine (tdd/01) | Consumes the active series; catalogues future specs separately; requires milestone/rationale/risk/test headers |
 | Fingerprint engine (tdd/02) | Builds/signs dataset bundles; version stamping |
 | Verification lab (tdd/06) | Runs as the mandatory CI gate; supplies pass/fail + diffs |
 | Manager (tdd/07) | Receives signed engine + dataset updates; verifies provenance |

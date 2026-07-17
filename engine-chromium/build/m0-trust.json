@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": {
+    "nameWithOwner": "jiyujie2006/proteus-browser",
+    "repositoryId": "1304085575",
+    "owner": "jiyujie2006",
+    "ownerId": "49909156",
+    "visibility": "public"
+  },
+  "sourceRef": "refs/heads/main",
+  "oidcIssuer": "https://token.actions.githubusercontent.com",
+  "workflows": {
+    "builder": ".github/workflows/m0-builder.yml",
+    "aggregate": ".github/workflows/m0-aggregate.yml",
+    "hardGate": ".github/workflows/m0-hard-gate.yml"
+  },
+  "predicateTypes": {
+    "provenance": "https://slsa.dev/provenance/v1",
+    "sbom": "https://cyclonedx.org/bom",
+    "build": "https://proteus.example/attestations/m0-build/v2",
+    "aggregate": "https://proteus.example/attestations/m0-aggregate/v2"
+  },
+  "runnerTrust": {
+    "githubHosted": {
+      "requireDenySelfHostedVerification": true
+    },
+    "externalEphemeral": {
+      "receiptSchemaVersion": "1.0.0",
+      "publicKeyPath": ".github/keys/m0-runner-controller-ed25519.pub",
+      "requireSingleUse": true,
+      "requireDestroyed": true,
+      "requireUniqueInstancePerBuild": true
+    }
+  }
+}

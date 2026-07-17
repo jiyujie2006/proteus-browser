@@ -21,7 +21,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const EXPECTED_APACHE_2_NORMALIZED_SHA256 =
   '0ffddef9e48f8a09aed5caf2d44f7ba1c1be2d9b8e0a6f693b1635b2d5566645';
-const PLANNED_UPSTREAM_NAMES = /\b(?:Chromium|Firefox|Camoufox|uTLS|uquic|ungoogled-chromium)\b/i;
+const EXPECTED_CHROMIUM_LICENSE_SHA256 =
+  '368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b';
+const ABSENT_UPSTREAM_NAMES = /\b(?:Firefox|Camoufox|uTLS|uquic|ungoogled-chromium)\b/i;
 
 function read(relativePath) {
   return readFileSync(join(ROOT, relativePath), 'utf8');
@@ -82,11 +84,26 @@ const checks = [
     },
   ],
   [
+    'pinned Chromium BSD license is preserved byte-for-byte',
+    () => {
+      assert.equal(
+        createHash('sha256')
+          .update(readFileSync(
+            join(ROOT, 'LICENSES', 'Chromium-BSD-3-Clause.txt'),
+          ))
+          .digest('hex'),
+        EXPECTED_CHROMIUM_LICENSE_SHA256,
+      );
+    },
+  ],
+  [
     'NOTICE contains current attribution only',
     () => {
       const notice = read('NOTICE');
       assert.match(notice, /^Proteus\nCopyright 2026 jiyujie2006 and Proteus contributors\n/);
-      assert.doesNotMatch(notice, PLANNED_UPSTREAM_NAMES);
+      assert.match(notice, /Copyright 2015 The Chromium Authors/);
+      assert.match(notice, /LICENSES\/Chromium-BSD-3-Clause\.txt/);
+      assert.doesNotMatch(notice, ABSENT_UPSTREAM_NAMES);
       assert.ok(Buffer.byteLength(notice) < 1024, 'NOTICE should remain attribution-only');
     },
   ],
@@ -114,12 +131,14 @@ const checks = [
     () => {
       const plan = read('docs/10-third-party-licensing.md');
       assert.match(plan, /does \*\*not\*\* contain or distribute/);
+      assert.match(plan, /Chromium's BSD 3-Clause License/);
+      assert.match(plan, /one active file.*real Proteus-authored change/s);
       assert.match(plan, /artifact-specific SBOM and third-party notice bundle/);
       assert.match(plan, /not proof that redistribution\s+obligations have been met/);
     },
   ],
   [
-    'component manifest contains current first-party components only',
+    'component manifest contains only current first-party code and pinned Chromium context',
     () => {
       const document = manifest();
       const properties = Object.fromEntries(
@@ -137,15 +156,26 @@ const checks = [
           'proteus-verify-lab',
           'proteus-chromium-scaffold',
           'proteus-repository-tooling',
+          'chromium-network-time-source-context',
         ],
       );
-      assert.ok(
-        document.components.every(({ licenses }) => (
-          licenses.length === 1 && licenses[0].license.id === 'Apache-2.0'
-        )),
+      const licenses = Object.fromEntries(document.components.map((component) => [
+        component.name,
+        component.licenses.map(({ license }) => license.id),
+      ]));
+      assert.deepEqual(
+        licenses['chromium-network-time-source-context'],
+        ['BSD-3-Clause'],
       );
+      for (const name of [
+        'proteus-fingerprint',
+        'proteus-verify-lab',
+        'proteus-chromium-scaffold',
+        'proteus-repository-tooling',
+      ]) {
+        assert.deepEqual(licenses[name], ['Apache-2.0']);
+      }
       const absentUpstreamComponents = new Set([
-        'chromium',
         'firefox',
         'firefox-camoufox',
         'camoufox',

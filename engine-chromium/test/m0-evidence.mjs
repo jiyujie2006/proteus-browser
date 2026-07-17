@@ -47,6 +47,10 @@ import {
 } from '../scripts/assemble-m0-evidence.mjs';
 import { buildArtifactBaselineReport } from '../../verify-lab/src/artifact-report.mjs';
 import { buildControlledProbeBinding } from '../../verify-lab/src/controlled-probe.mjs';
+import {
+  auditNetworkTimeNetLog,
+} from '../../verify-lab/src/network-time-audit.mjs';
+import { readChromiumBaseline } from '../scripts/baseline.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..', '..');
@@ -73,10 +77,21 @@ function createFixture() {
   const keys = join(repo, '.github', 'keys');
   mkdirSync(artifacts, { recursive: true });
   mkdirSync(keys, { recursive: true });
+  const fixturePatches = join(repo, 'engine-chromium', 'patches');
+  mkdirSync(join(fixturePatches, 'layer0-degoogle'), { recursive: true });
   cpSync(
-    join(REPO, 'engine-chromium', 'patches'),
-    join(repo, 'engine-chromium', 'patches'),
-    { recursive: true },
+    join(REPO, 'engine-chromium', 'patches', 'series'),
+    join(fixturePatches, 'series'),
+  );
+  cpSync(
+    join(
+      REPO,
+      'engine-chromium',
+      'patches',
+      'layer0-degoogle',
+      '0001-disable-google-network-time.patch',
+    ),
+    join(fixturePatches, 'layer0-degoogle', '0001-disable-google-network-time.patch'),
   );
   mkdirSync(join(repo, 'verify-lab', 'data'), { recursive: true });
   cpSync(
@@ -112,7 +127,9 @@ function createFixture() {
   );
   const evidence = {
     schemaVersion: M0_EVIDENCE_SCHEMA_VERSION,
-    chromiumCommit: 'a'.repeat(40),
+    chromiumCommit: readChromiumBaseline(
+      join(repo, 'engine-chromium', 'CHROMIUM_BASELINE'),
+    ).CHROMIUM_COMMIT,
     patchSeriesSha256: patchSeriesSha256(repo),
     platforms: {},
   };
@@ -143,6 +160,8 @@ function createFixture() {
             join(artifacts, artifact),
             '--chromium-commit',
             evidence.chromiumCommit,
+            '--effective-gn-args',
+            join(repo, 'engine-chromium', 'build', 'args.gn'),
             '--platform',
             platform,
             '--invocation-id',
@@ -164,6 +183,9 @@ function createFixture() {
     const report = buildArtifactBaselineReport({
       artifactPath: join(artifacts, artifactPath),
       executionIsolation: M0_EXTERNAL_EXECUTION_ISOLATION,
+      networkTimeAudit: auditNetworkTimeNetLog({
+        events: [{ params: { url: 'http://127.0.0.1/probe' } }],
+      }),
       observation: JSON.parse(readFileSync(
         join(REPO, 'verify-lab', 'fixtures', 'bad-v5-automation-tells.json'),
         'utf8',
@@ -740,6 +762,24 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
     evidence.platforms[platform].verificationReport.path,
   );
   const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  report.networkTimeAudit.matchingEventCount = 1;
+  report.networkTimeAudit.defaultQueryAbsent = false;
+  writeFileSync(reportPath, JSON.stringify(report));
+  evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
+    'a re-signed report cannot substitute a failing Network Time audit');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'windows-x64';
+  const reportPath = join(
+    artifacts,
+    evidence.platforms[platform].verificationReport.path,
+  );
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
   report.suites[0].name = 'noop';
   writeFileSync(reportPath, JSON.stringify(report));
   evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
@@ -906,7 +946,7 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
   const path =
     join(artifacts, evidence.platforms[platform].buildA.provenance.path);
   const provenance = JSON.parse(readFileSync(path, 'utf8'));
-  provenance.predicate.buildDefinition.externalParameters.gnArgsSha256 =
+  provenance.predicate.buildDefinition.externalParameters.effectiveGnArgsSha256 =
     `sha256:${'0'.repeat(64)}`;
   writeFileSync(path, JSON.stringify(provenance));
   evidence.platforms[platform].buildA.provenance.sha256 = sha256File(path);
@@ -914,7 +954,46 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
   writeEvidence(repo, evidence);
   const audit = verifyM0BuildEvidence(repo);
   check(!audit.ok && audit.failures.some((failure) => failure.includes('artifact, source')),
-    'provenance must bind the exact checked-in GN argument bytes');
+    'provenance must bind the exact effective GN argument bytes');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'linux-x64';
+  const path =
+    join(artifacts, evidence.platforms[platform].buildA.provenance.path);
+  const provenance = JSON.parse(readFileSync(path, 'utf8'));
+  provenance.predicate.buildDefinition.internalParameters.depotToolsCommit =
+    'b'.repeat(40);
+  writeFileSync(path, JSON.stringify(provenance));
+  evidence.platforms[platform].buildA.provenance.sha256 = sha256File(path);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(
+    !audit.ok
+      && audit.failures.some((failure) => failure.includes('artifact, source')),
+    'provenance must bind the exact pinned depot_tools commit',
+  );
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'linux-x64';
+  const path =
+    join(artifacts, evidence.platforms[platform].buildA.provenance.path);
+  const provenance = JSON.parse(readFileSync(path, 'utf8'));
+  const depot = provenance.predicate.buildDefinition.resolvedDependencies
+    .find((dependency) => dependency.uri.includes('depot_tools'));
+  depot.digest.gitCommit = 'b'.repeat(40);
+  writeFileSync(path, JSON.stringify(provenance));
+  evidence.platforms[platform].buildA.provenance.sha256 = sha256File(path);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(
+    !audit.ok
+      && audit.failures.some((failure) => failure.includes('artifact, source')),
+    'provenance material dependencies cannot substitute another depot_tools commit',
+  );
 });
 
 withFixture(({ repo, artifacts, evidence, privateKey }) => {
@@ -976,8 +1055,56 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
   }
   writeEvidence(repo, evidence);
   const audit = verifyM0BuildEvidence(repo);
-  check(!audit.ok && audit.failures.some((failure) => failure.includes('current patch bytes')),
-    'signed evidence cannot claim a different patch series');
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('current active patch bytes')),
+    'signed evidence cannot claim a different active patch series');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  evidence.chromiumCommit = 'b'.repeat(40);
+  for (const platform of M0_PLATFORMS) {
+    resignPlatform(evidence, platform, privateKey, artifacts);
+  }
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(
+    !audit.ok
+      && audit.failures.some((failure) =>
+        failure.includes('exact pinned baseline commit')),
+    'signed evidence cannot substitute a different Chromium commit for the baseline pin',
+  );
+});
+
+withFixture(({ repo }) => {
+  const future = join(
+    repo,
+    'engine-chromium',
+    'patches',
+    'unreferenced-future-specification',
+  );
+  writeFileSync(future, '# future-only fixture bytes\n');
+  const audit = verifyM0BuildEvidence(repo);
+  check(
+    audit.ok,
+    'future backlog bytes do not invalidate evidence for an already-built M0 active series',
+  );
+});
+
+withFixture(({ repo }) => {
+  const active = join(
+    repo,
+    'engine-chromium',
+    'patches',
+    'layer0-degoogle',
+    '0001-disable-google-network-time.patch',
+  );
+  writeFileSync(active, `${readFileSync(active, 'utf8')}\n# active fixture change\n`);
+  const audit = verifyM0BuildEvidence(repo);
+  check(
+    !audit.ok
+      && audit.failures.some((failure) =>
+        failure.includes('current active patch bytes')),
+    'changing active patch bytes invalidates previously signed M0 evidence',
+  );
 });
 
 console.log('  ' + '─'.repeat(58));

@@ -1,0 +1,195 @@
+name: M0 hard gate
+
+on:
+  workflow_run:
+    workflows:
+      - M0 aggregate
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      aggregate_run_id:
+        description: Successful M0 aggregate workflow run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  attestations: read
+
+concurrency:
+  group: m0-hard-gate-${{ github.event.workflow_run.head_sha || inputs.aggregate_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ${{ fromJSON(vars.M0_VERIFIER_RUNNER_LABELS_JSON || '"ubuntu-latest"') }}
+    timeout-minutes: 120
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require a fresh GitHub-hosted verifier
+        shell: bash
+        run: |
+          test "${{ runner.environment }}" = "github-hosted"
+          test "$RUNNER_OS" = "Linux"
+          test "$RUNNER_ARCH" = "X64"
+
+      - name: Install the source-policy-pinned GitHub CLI
+        shell: bash
+        run: |
+          archive="${RUNNER_TEMP}/gh_2.94.0_linux_amd64.tar.gz"
+          install_root="${RUNNER_TEMP}/trusted-gh"
+          curl --fail --silent --show-error --location \
+            --output "$archive" \
+            https://github.com/cli/cli/releases/download/v2.94.0/gh_2.94.0_linux_amd64.tar.gz
+          echo "a757f1ba6db18f4de8cbadb244843a5f89bc75b5e7c6fc127d2bd77fbd12ed62  $archive" |
+            sha256sum --check --strict
+          mkdir "$install_root"
+          tar -xzf "$archive" --strip-components=1 -C "$install_root"
+          gh_path="$(realpath "$install_root/bin/gh")"
+          gh_sha256="$(sha256sum "$gh_path" | cut -d ' ' -f 1)"
+          test -x "$gh_path"
+          echo "PROTEUS_GH_PATH=$gh_path" >>"$GITHUB_ENV"
+          echo "PROTEUS_EXPECTED_GH_SHA256=$gh_sha256" >>"$GITHUB_ENV"
+
+      - name: Resolve and preflight the aggregate run
+        id: aggregate
+        shell: bash
+        env:
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          INPUT_RUN_ID: ${{ inputs.aggregate_run_id }}
+        run: |
+          run_id="${EVENT_RUN_ID:-$INPUT_RUN_ID}"
+          [[ "$run_id" =~ ^[1-9][0-9]{0,19}$ ]]
+          mapfile -t facts < <(
+            "$PROTEUS_GH_PATH" api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '.head_sha, .head_branch, .event, .status, .conclusion, .path, .run_attempt'
+          )
+          test "${#facts[@]}" -eq 7
+          [[ "${facts[0]}" =~ ^[0-9a-f]{40}$ ]]
+          test "${facts[1]}" = "main"
+          test "${facts[2]}" = "workflow_dispatch"
+          test "${facts[3]}" = "completed"
+          test "${facts[4]}" = "success"
+          case "${facts[5]}" in
+            .github/workflows/m0-aggregate.yml*) ;;
+            *) exit 1 ;;
+          esac
+          [[ "${facts[6]}" =~ ^[1-9][0-9]{0,8}$ ]]
+          echo "run-id=$run_id" >>"$GITHUB_OUTPUT"
+          echo "source-sha=${facts[0]}" >>"$GITHUB_OUTPUT"
+          echo "run-attempt=${facts[6]}" >>"$GITHUB_OUTPUT"
+
+      - name: Check out the exact aggregate source policy
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ steps.aggregate.outputs.source-sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.22.2'
+          package-manager-cache: false
+
+      - name: Install locked verification dependencies
+        run: npm ci
+
+      - name: Download the verified aggregate index
+        shell: bash
+        env:
+          AGGREGATE_RUN_ID: ${{ steps.aggregate.outputs.run-id }}
+          AGGREGATE_RUN_ATTEMPT: ${{ steps.aggregate.outputs.run-attempt }}
+          SOURCE_SHA: ${{ steps.aggregate.outputs.source-sha }}
+        run: |
+          download="${RUNNER_TEMP}/m0-index-download"
+          assembly="${RUNNER_TEMP}/m0-assembly"
+          mkdir "$download" "$assembly"
+          index_tar="$download/m0-index.tar"
+          index_tree="$download/index-tree"
+          node engine-chromium/scripts/m0-artifact-transport.mjs \
+            fetch-named \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$AGGREGATE_RUN_ID" \
+            --name "m0-index-${SOURCE_SHA}-attempt-${AGGREGATE_RUN_ATTEMPT}" \
+            --inner-name m0-index.tar \
+            --output "$index_tar" \
+            --kind index
+          node engine-chromium/scripts/m0-artifact-transport.mjs extract \
+            --archive "$index_tar" \
+            --destination "$index_tree" \
+            --kind index
+          node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+            --source "$index_tree" \
+            --destination "$assembly"
+          rm "$index_tar"
+          echo "PROTEUS_ASSEMBLY=$assembly" >>"$GITHUB_ENV"
+
+      - name: Restore all six immutable builder payloads
+        shell: bash
+        run: |
+          plan="${RUNNER_TEMP}/m0-download-plan.tsv"
+          node --input-type=module - "$PROTEUS_ASSEMBLY/m0-build-evidence-v2.json" >"$plan" <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const evidence = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          const platforms = ['windows-x64', 'macos-universal', 'linux-x64'];
+          const seen = new Set();
+          for (const platform of platforms) {
+            for (const slot of ['A', 'B']) {
+              const runId = evidence?.platforms?.[platform]?.[slot]?.runId;
+              if (!/^[1-9][0-9]{0,19}$/.test(runId) || seen.has(runId)) {
+                throw new TypeError('aggregate evidence has an unsafe or reused run ID');
+              }
+              seen.add(runId);
+              process.stdout.write(`${platform}\t${slot}\t${runId}\n`);
+            }
+          }
+          NODE
+          while IFS=$'\t' read -r platform slot run_id
+          do
+            destination="${RUNNER_TEMP}/payload-${platform}-${slot}"
+            mkdir "$destination"
+            payload_tar="${destination}/m0-payload.tar"
+            payload_tree="${destination}/payload-tree"
+            record="${PROTEUS_ASSEMBLY}/builds/${platform}/${slot}/records/build-record.json"
+            node engine-chromium/scripts/m0-artifact-transport.mjs \
+              fetch-bound \
+              --repository "$GITHUB_REPOSITORY" \
+              --run-id "$run_id" \
+              --platform "$platform" \
+              --slot "$slot" \
+              --record "$record" \
+              --inner-name m0-payload.tar \
+              --output "$payload_tar"
+            node engine-chromium/scripts/m0-artifact-transport.mjs extract \
+              --archive "$payload_tar" \
+              --destination "$payload_tree" \
+              --kind payload \
+              --platform "$platform" \
+              --slot "$slot"
+            node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+              --source "${payload_tree}/builds/${platform}/${slot}" \
+              --destination "${PROTEUS_ASSEMBLY}/builds/${platform}/${slot}" \
+              --entry bundle
+            rm "$payload_tar"
+          done <"$plan"
+          node engine-chromium/scripts/validate-artifact-staging.mjs \
+            --root "$PROTEUS_ASSEMBLY"
+          node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+            --source "$PROTEUS_ASSEMBLY" \
+            --destination engine-chromium/artifacts
+
+      - name: Enforce every hard-M0 exit criterion
+        shell: bash
+        env:
+          PROTEUS_EXPECTED_SOURCE_DIGEST: ${{ steps.aggregate.outputs.source-sha }}
+          PROTEUS_EXPECTED_SIGNER_DIGEST: ${{ steps.aggregate.outputs.source-sha }}
+        run: npm run m0:milestone

@@ -4,8 +4,8 @@
 // Default mode verifies only what can run without a Chromium checkout. Passing
 // means "the local ruler/tooling scaffold is ready", not "M0 is complete".
 // `--milestone` additionally enforces the hard roadmap criteria and therefore
-// remains red until real patches and full-bundle, builder-attested evidence
-// exist at the explicitly required assurance level.
+// remains red until the real active patch applies to the exact clean checkout
+// and full-bundle, builder-attested evidence exists at the required assurance.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -15,10 +15,19 @@ import { runTrackingPipeline } from '../engine-chromium/tracking-bot/pipeline.mj
 import { loadReference } from '../verify-lab/src/reference.mjs';
 import { RULES_VERSION, runRules } from '../verify-lab/src/rules.mjs';
 import {
-  M0_HARD_ASSURANCE_LEVEL,
   patchSeriesSha256,
-  verifyM0BuildEvidence,
 } from './m0-evidence.mjs';
+import {
+  M0_EVIDENCE_V2_ASSURANCE_LEVEL,
+  verifyM0EvidenceV2,
+} from './m0-evidence-v2.mjs';
+import {
+  readChromiumBaseline,
+} from '../engine-chromium/scripts/baseline.mjs';
+import {
+  auditActivePatchSeries,
+  patchHasPayload,
+} from '../engine-chromium/scripts/patch-series.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO = join(__dirname, '..');
@@ -70,21 +79,31 @@ function fullTrackingDryRun() {
 
 let buildEvidenceAudit;
 function fullBuildEvidenceAudit() {
-  buildEvidenceAudit ??= verifyM0BuildEvidence(REPO);
+  const sourceDigest = process.env.PROTEUS_EXPECTED_SOURCE_DIGEST;
+  buildEvidenceAudit ??= verifyM0EvidenceV2(REPO, {
+    expectedSourceDigest: sourceDigest,
+    expectedSignerDigest:
+      process.env.PROTEUS_EXPECTED_SIGNER_DIGEST ?? sourceDigest,
+    expectedRunnerControllerKeySha256:
+      process.env.PROTEUS_EXPECTED_RUNNER_KEY_SHA256,
+    expectedGhSha256: process.env.PROTEUS_EXPECTED_GH_SHA256,
+    ghPath: process.env.PROTEUS_GH_PATH,
+  });
   return buildEvidenceAudit;
 }
 
 function hardBuildEvidenceAudit() {
   const audit = fullBuildEvidenceAudit();
-  if (!audit.ok || audit.assuranceLevel === M0_HARD_ASSURANCE_LEVEL) {
+  if (!audit.ok
+      || audit.assuranceLevel === M0_EVIDENCE_V2_ASSURANCE_LEVEL) {
     return audit;
   }
   return {
     ...audit,
     ok: false,
     failures: [
-      `evidence assurance ${audit.assuranceLevel} is below required ${M0_HARD_ASSURANCE_LEVEL}`,
-      'hard M0 requires a complete engine-bundle manifest, independently authenticated builders, an attested live-harness run, and effective build args/toolchains',
+      `evidence assurance ${audit.assuranceLevel} is below required ${M0_EVIDENCE_V2_ASSURANCE_LEVEL}`,
+      'hard M0 requires complete bundles from six independently authenticated builder runs',
     ],
   };
 }
@@ -143,17 +162,43 @@ check('probe page + live-drive harness exist (runtime path)', () => {
 
 // ---- Deliverable 2: reproducible-build / tracking pipeline ------------------
 
-check('patch series is valid (layered + rationale headers)', () => {
-  const r = runNode('engine-chromium', ['scripts/check-series.mjs']);
-  return { ok: r.ok, detail: r.ok ? 'series structure + headers valid' : 'series invalid' };
-});
-
-check('engine scaffold fails closed across supported Node platforms', () => {
-  const r = runNode('.', ['engine-chromium/test/scaffold-honesty.mjs']);
+check('active M0 patch profile is valid independently of future backlogs', () => {
+  const r = runNode('engine-chromium', ['scripts/check-series.mjs', '--active']);
   return {
     ok: r.ok,
     detail: r.ok
-      ? 'placeholder apply, provenance, and manifest honesty regressions'
+      ? '1 active layer0 input; M1/M3 backlog files are not read by this gate'
+      : 'active M0 series invalid',
+  };
+});
+
+check('Chromium and depot_tools baseline is strict and commit-pinned', () => {
+  const r = runNode('engine-chromium', ['scripts/baseline.mjs', '--json']);
+  if (!r.ok) return { ok: false, detail: 'strict baseline validation failed' };
+  const baseline = JSON.parse(r.out);
+  return {
+    ok: /^[0-9a-f]{40}$/.test(baseline.CHROMIUM_COMMIT)
+      && /^[0-9a-f]{40}$/.test(baseline.DEPOT_TOOLS_COMMIT),
+    detail: `Chromium ${baseline.CHROMIUM_STABLE} @ ${baseline.CHROMIUM_COMMIT.slice(0, 12)}…; depot_tools ${baseline.DEPOT_TOOLS_COMMIT.slice(0, 12)}…`,
+  };
+});
+
+check('hard-M0 build and trust contracts are internally consistent', () => {
+  const r = runNode('engine-chromium', ['scripts/build-contract.mjs', '--check']);
+  return {
+    ok: r.ok,
+    detail: r.ok
+      ? `six-build ${M0_EVIDENCE_V2_ASSURANCE_LEVEL} contract`
+      : 'hard-M0 build/trust contract validation failed',
+  };
+});
+
+check('engine scaffold fails closed across supported Node platforms', () => {
+  const r = runNode('.', ['engine-chromium/test/scaffold-honesty.mjs', '--m0']);
+  return {
+    ok: r.ok,
+    detail: r.ok
+      ? 'real-patch preflight, isolated-placeholder, provenance, and manifest honesty regressions'
       : 'scaffold honesty regression tests failed',
   };
 });
@@ -178,11 +223,19 @@ check('demo provenance document has an in-toto/SLSA shape', () => {
   return { ok: okShape, detail: 'shape + patch hash checked; subject is explicitly a demo sentinel' };
 });
 
-check('initial GN reproducibility knobs exist and sandbox stays enabled', () => {
+check('shared GN release contract is cross-platform and sandbox stays enabled', () => {
   const args = readFileSync(join(REPO, 'engine-chromium', 'build', 'args.gn'), 'utf8');
-  const repro = args.includes('strip_absolute_paths_from_debug_symbols = true');
+  const release = args.includes('is_debug = false')
+    && args.includes('is_official_build = true')
+    && args.includes('use_thin_lto = true');
+  const noPlatformOnlyArgs =
+    !/^\s*(?:strip_absolute_paths_from_debug_symbols|enable_stripping)\s*=/mu
+      .test(args);
   const noSandboxDisable = !/disable_sandbox\s*=\s*true/.test(args);
-  return { ok: repro && noSandboxDisable, detail: 'local config check only; bit-for-bit reproducibility still needs two real builds' };
+  return {
+    ok: release && noPlatformOnlyArgs && noSandboxDisable,
+    detail: 'shared args avoid M150 platform-only overrides; build records validate effective args and A/B trees',
+  };
 });
 
 check('tracking state-machine scaffold traverses every dry-run state', () => {
@@ -208,164 +261,126 @@ check('dry-run VERIFY state invokes the local ruler gate', () => {
 check('Chromium fetch/apply/build scaffold scripts exist', () => {
   const need = ['fetch-chromium.sh', 'apply-patches.sh', 'build.sh'].map((s) => join(REPO, 'engine-chromium', 'scripts', s));
   const ok = need.every(existsSync);
-  return { ok, detail: 'presence only; production apply currently rejects placeholder patches' };
+  return {
+    ok,
+    detail: 'presence only; production apply requires the exact clean checkout and hard M0 still requires builder-attested evidence',
+  };
 }, { scaffold: true });
 
-check('cryptographic M0 evidence verifier rejects forged manifests', () => {
-  const r = runNode('.', ['engine-chromium/test/m0-evidence.mjs']);
+check('cryptographic M0 evidence verifiers reject forged manifests', () => {
+  const legacy = runNode('.', ['engine-chromium/test/m0-evidence.mjs']);
+  const complete = runNode('.', ['engine-chromium/test/m0-evidence-v2.mjs']);
   return {
-    ok: r.ok,
-    detail: r.ok
-      ? 'bounded entrypoint evidence + digest/run/path/identity/signature/report tamper cases'
+    ok: legacy.ok && complete.ok,
+    detail: legacy.ok && complete.ok
+      ? 'entrypoint and full-bundle v2 digest/run/path/identity/attestation/report tamper cases'
       : 'evidence verifier regression tests failed',
   };
 });
 
 // ---- Hard roadmap milestone criteria ---------------------------------------
 
-milestoneCheck('patch series contains real applicable diff hunks', () => {
-  const series = readFileSync(join(REPO, 'engine-chromium', 'patches', 'series'), 'utf8')
-    .split('\n').map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
-  const patchPaths = series.map((entry) =>
-    join(REPO, 'engine-chromium', 'patches', entry));
+milestoneCheck('active M0 patch profile applies to the exact pinned Chromium commit', () => {
+  const engineRoot = join(REPO, 'engine-chromium');
+  let baseline;
+  let activeAudit;
+  try {
+    baseline = readChromiumBaseline(join(engineRoot, 'CHROMIUM_BASELINE'));
+    activeAudit = auditActivePatchSeries(
+      join(engineRoot, 'patches'),
+      baseline.PATCH_PROFILE,
+    );
+  } catch (error) {
+    return { ok: false, detail: `invalid active patch contract: ${error.message}` };
+  }
+  if (activeAudit.errors.length > 0) {
+    return {
+      ok: false,
+      detail: `invalid active patch contract: ${activeAudit.errors[0]}`,
+    };
+  }
+  const series = activeAudit.active;
+  const patchPaths = series.map((entry) => join(engineRoot, 'patches', entry));
   const invalid = [];
   for (let index = 0; index < patchPaths.length; index += 1) {
-    try {
-      execFileSync('git', ['apply', '--numstat', patchPaths[index]], {
-        cwd: REPO,
-        stdio: 'ignore',
-      });
-    } catch {
-      invalid.push(series[index]);
-    }
+    if (!patchHasPayload(patchPaths[index])) invalid.push(series[index]);
   }
   if (invalid.length) {
     return {
       ok: false,
-      detail: `${invalid.length}/${series.length} patches have no git-parseable payload`,
+      detail: `${invalid.length}/${series.length} active M0 patch has no git-parseable payload; 16 future specifications do not gate M0`,
     };
   }
 
-  const checkout = process.env.PROTEUS_CHROMIUM_CHECKOUT
-    || join(REPO, 'engine-chromium', 'src', 'src');
-  if (!existsSync(checkout)) {
+  const audit = hardBuildEvidenceAudit();
+  if (!audit.ok) {
     return {
       ok: false,
-      detail: 'real hunks exist, but no clean Chromium checkout is available for git apply --check',
+      detail: `active patch payload exists, but builder evidence is invalid: ${audit.failures[0]}`,
     };
   }
-  let dirty;
-  try {
-    dirty = execFileSync(
-      'git',
-      ['-C', checkout, 'status', '--porcelain'],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
-    ).toString().trim();
-  } catch {
+  if (audit.chromiumCommit !== baseline.CHROMIUM_COMMIT) {
     return {
       ok: false,
-      detail: 'Chromium checkout is not a readable Git work tree',
+      detail: 'builder evidence does not bind the pinned Chromium commit',
     };
   }
-  if (dirty) {
+  const localSeriesHash = patchSeriesSha256(REPO);
+  if (audit.patchSeriesSha256 !== localSeriesHash) {
     return {
       ok: false,
-      detail: 'Chromium checkout has modifications or untracked files; apply-check requires a clean source tree',
-    };
-  }
-  try {
-    execFileSync(
-      'git',
-      ['-C', checkout, 'apply', '--check', '--index', '--whitespace=nowarn', ...patchPaths],
-      { stdio: 'ignore' },
-    );
-  } catch {
-    return {
-      ok: false,
-      detail: 'git apply --check rejected the complete series against the clean checkout',
-    };
-  }
-  const audit = fullBuildEvidenceAudit();
-  if (!audit.chromiumCommit) {
-    return {
-      ok: false,
-      detail: 'patches apply, but no build evidence commit is available to bind the checkout',
-    };
-  }
-  let checkoutCommit;
-  try {
-    checkoutCommit = execFileSync(
-      'git',
-      ['-C', checkout, 'rev-parse', 'HEAD'],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
-    ).toString().trim();
-  } catch {
-    return {
-      ok: false,
-      detail: 'cannot resolve the clean Chromium checkout HEAD',
-    };
-  }
-  if (checkoutCommit !== audit.chromiumCommit) {
-    return {
-      ok: false,
-      detail: `checkout HEAD ${checkoutCommit.slice(0, 12)}… != evidence ${audit.chromiumCommit.slice(0, 12)}…`,
-    };
-  }
-  const baseline = readFileSync(
-    join(REPO, 'engine-chromium', 'CHROMIUM_BASELINE'),
-    'utf8',
-  ).match(/^CHROMIUM_STABLE=(.+)$/m)?.[1];
-  let baselineCommit;
-  try {
-    baselineCommit = execFileSync(
-      'git',
-      ['-C', checkout, 'rev-parse', '--verify', `refs/tags/${baseline}^{commit}`],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
-    ).toString().trim();
-  } catch {
-    return {
-      ok: false,
-      detail: `cannot resolve pinned Chromium tag ${baseline ?? '(missing)'}`,
-    };
-  }
-  if (baselineCommit !== checkoutCommit) {
-    return {
-      ok: false,
-      detail: `checkout HEAD is not the pinned Chromium tag ${baseline}`,
+      detail: 'builder evidence does not bind the active M0 patch series',
     };
   }
   return {
     ok: true,
-    detail: `${series.length} real patches apply cleanly; series sha256:${patchSeriesSha256(REPO).slice(0, 12)}…`,
+    detail: `${series.length} active patch built successfully in six trusted runs at ${baseline.CHROMIUM_COMMIT.slice(0, 12)}…; series sha256:${localSeriesHash.slice(0, 12)}…`,
   };
 });
 
 milestoneCheck('dedicated three-platform Chromium build workflow exists', () => {
-  const workflow = join(REPO, '.github', 'workflows', 'chromium-build.yml');
-  if (!existsSync(workflow)) {
-    return {
-      ok: false,
-      detail: 'missing .github/workflows/chromium-build.yml',
-    };
-  }
-  const source = readFileSync(workflow, 'utf8');
-  const required = [
-    'windows-latest',
-    'macos-latest',
-    'ubuntu-latest',
-    'engine-chromium/scripts/build.sh',
-    'actions/upload-artifact',
-    'm0-build-evidence',
+  const workflowSpecs = [
+    ['m0-builder.yml', [
+      'windows-x64',
+      'macos-universal',
+      'linux-x64',
+      'actions/attest@',
+      'actions/upload-artifact@',
+      'm0-build-record.mjs prepare',
+    ]],
+    ['m0-aggregate.yml', [
+      'windows_a_run_id',
+      'linux_b_run_id',
+      'm0-evidence-v2.mjs',
+      'm0-index-',
+    ]],
+    ['m0-hard-gate.yml', [
+      'workflow_run:',
+      'M0 aggregate',
+      'validate-artifact-staging.mjs',
+      'npm run m0:milestone',
+    ]],
   ];
-  const missing = required.filter((marker) => !source.includes(marker));
+  const missing = [];
+  for (const [name, markers] of workflowSpecs) {
+    const path = join(REPO, '.github', 'workflows', name);
+    if (!existsSync(path)) {
+      missing.push(name);
+      continue;
+    }
+    const source = readFileSync(path, 'utf8');
+    for (const marker of markers) {
+      if (!source.includes(marker)) missing.push(`${name}:${marker}`);
+    }
+  }
   const attested = hardBuildEvidenceAudit().ok;
   return {
     ok: missing.length === 0 && attested,
     detail: missing.length
-      ? `workflow missing required build/evidence markers: ${missing.join(', ')}`
+      ? `workflow chain is missing: ${missing.join(', ')}`
       : attested
-        ? 'three OS runs are declared and independently attested by hard evidence'
-        : 'workflow markers exist, but no independently authenticated workflow-run evidence is present',
+        ? 'builder → aggregate → hard-gate chain authenticated all six runs'
+        : 'workflow chain exists, but no independently authenticated six-run evidence is present',
   };
 });
 
@@ -374,7 +389,7 @@ milestoneCheck('signed reproducible Win/macOS/Linux build evidence exists', () =
   return {
     ok: audit.ok,
     detail: audit.ok
-      ? 'actual files, two-build digests, provenance bindings, and pinned-key signatures verified'
+      ? `${audit.verifiedBuilds} complete builds: A/B tree digests, provenance, SBOM, toolchains, dependencies, and Sigstore bundles verified`
       : audit.failures.slice(0, 2).join('; '),
   };
 });
@@ -384,7 +399,7 @@ milestoneCheck('built bundles have builder-attested live verification reports', 
   return {
     ok: audit.ok,
     detail: audit.ok
-      ? 'three attested live runs bind recomputed baselines to complete engine bundles'
+      ? 'six artifact-driven drive-chrome v1.1 reports were recomputed for V1–V5 and bound to their complete bundles'
       : audit.failures.slice(0, 2).join('; '),
   };
 });

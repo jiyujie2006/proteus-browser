@@ -1,0 +1,28 @@
+# Rationale: Keep Chromium's Google-backed Network Time query disabled by default while preserving an explicit feature override for controlled upstream tests.
+# Surface: Google-backed Network Time request (clients2.google.com/time/1/current)
+# Threat-vectors: reduces ambient network metadata; not a fingerprint or automation surface
+# Upstream-risk: LOW. One feature-default and its adjacent comment; re-audit if NetworkTimeTracker feature ownership or defaults change upstream.
+# Tests: exact-commit git apply/tree check; components/network_time unit tests with their explicit feature enable; three-platform build; controlled loopback probe with NetLog observation
+# Target-milestone: M0
+# Status: ACTIVE
+# Origin: Proteus-authored minimal layer0 implementation; behavior compared against ungoogled-chromium 150.0.7871.124-1 without copying its hard-off hunk.
+# Chromium-commit: 9261fd0a595ac4964ea84e6bd4a025c1173a2ffa
+# Chromium-path: components/network_time/network_time_tracker.cc
+# Chromium-blob: 9a78ac24cc7eedbbe8239fc1b48a0e04ef07b85d
+# Chromium-file-sha256: 704ad013d6af61138961ebe95b621c41be93738251ac6e8f5d997fe48881095d
+# License-boundary: Chromium diff context remains BSD-3-Clause; Proteus-authored metadata/change is Apache-2.0.
+#
+diff --git a/components/network_time/network_time_tracker.cc b/components/network_time/network_time_tracker.cc
+--- a/components/network_time/network_time_tracker.cc
++++ b/components/network_time/network_time_tracker.cc
+@@ -60,7 +60,7 @@ namespace network_time {
+-// Network time queries are enabled on Android and all desktop platforms except
+-// Chrome OS, which uses tlsdated to set the system time.
++// Proteus keeps Google-backed network time queries disabled by default on all
++// platforms. Controlled tests can explicitly enable the feature when needed.
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_IOS)
+ BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
+ #else
+-BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_ENABLED_BY_DEFAULT);
++BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif

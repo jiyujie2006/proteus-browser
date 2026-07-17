@@ -1,0 +1,4 @@
+# Proteus M3 patch backlog — specifications only, never applied by M0 builds.
+# Target-milestone: M3
+# Status: BACKLOG
+layer2-antiautomation/0003-stealth-cdp.patch

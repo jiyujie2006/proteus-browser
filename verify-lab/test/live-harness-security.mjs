@@ -1,9 +1,11 @@
+import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { CdpPipeClient } from '../src/cdp-pipe.mjs';
+import { closeBrowserGracefully } from '../src/browser-close.mjs';
 import {
   buildControlledProbeBinding,
   createControlledProbeHandler,
@@ -86,6 +88,17 @@ export async function runLiveHarnessSecurityTests(assert) {
     'CDP pipe parser accepts a response split across stream chunks',
   );
 
+  const trackedResponse = client.sendWithWriteAck('Browser.getVersion');
+  await trackedResponse.written;
+  chromeOutput.write(`${JSON.stringify({
+    id: sent.id + 1,
+    result: { product: 'Chromium/tracked' },
+  })}\0`);
+  assert(
+    (await trackedResponse.response).product === 'Chromium/tracked',
+    'CDP pipe exposes a separate successful-write acknowledgement',
+  );
+
   const eventPromise = client.waitForEvent('Page.lifecycleEvent', {
     predicate: (event) => event.loaderId === 'loader' && event.name === 'load',
     sessionId: 'session',
@@ -100,4 +113,133 @@ export async function runLiveHarnessSecurityTests(assert) {
     'CDP pipe events stay bound to the expected target session and loader',
   );
   client.close();
+
+  function fakeChrome() {
+    const chrome = new EventEmitter();
+    chrome.pid = 123;
+    chrome.exitCode = null;
+    chrome.signalCode = null;
+    return chrome;
+  }
+
+  async function closeCase({
+    afterClose = () => {},
+    close = [0, null],
+    response = Promise.resolve({}),
+    timeoutMs = 100,
+    written = Promise.resolve(),
+  } = {}) {
+    const chrome = fakeChrome();
+    let writeObserved = false;
+    const closing = closeBrowserGracefully(
+      chrome,
+      {
+        sendWithWriteAck(method) {
+          assert(method === 'Browser.close', 'graceful close uses the root Browser.close command');
+          return { response, written };
+        },
+      },
+      {
+        onCommandWritten() {
+          writeObserved = true;
+        },
+        timeoutMs,
+      },
+    );
+    if (close) {
+      setImmediate(() => {
+        chrome.emit('close', ...close);
+        afterClose();
+      });
+    }
+    await closing;
+    return writeObserved;
+  }
+
+  assert(
+    await closeCase(),
+    'graceful close accepts a CDP response followed by a normal child close',
+  );
+  assert(
+    await (() => {
+      let rejectResponse;
+      const response = new Promise((_, reject) => {
+        rejectResponse = reject;
+      });
+      return closeCase({
+        afterClose() {
+          rejectResponse(new Error('Chromium closed CDP output pipe'));
+        },
+        response,
+      });
+    })(),
+    'graceful close accepts expected response loss after a written close command',
+  );
+
+  let protocolCloseFailureRejected = false;
+  try {
+    await closeCase({
+      response: Promise.reject(
+        new Error('CDP Browser.close failed: method rejected'),
+      ),
+    });
+  } catch (error) {
+    protocolCloseFailureRejected = error.message.includes('method rejected');
+  }
+  assert(
+    protocolCloseFailureRejected,
+    'graceful close rejects an explicit Browser.close protocol error',
+  );
+
+  let closeWriteFailureRejected = false;
+  try {
+    await closeCase({
+      close: null,
+      response: Promise.reject(new Error('write EPIPE')),
+      written: Promise.reject(new Error('write EPIPE')),
+    });
+  } catch (error) {
+    closeWriteFailureRejected = error.message.includes('EPIPE');
+  }
+  assert(
+    closeWriteFailureRejected,
+    'graceful close rejects a Browser.close write failure',
+  );
+
+  let abnormalCloseRejected = false;
+  try {
+    await closeCase({ close: [1, null] });
+  } catch (error) {
+    abnormalCloseRejected = error.message.includes('graceful close failed');
+  }
+  assert(
+    abnormalCloseRejected,
+    'graceful close rejects a nonzero child exit',
+  );
+
+  let signaledCloseRejected = false;
+  try {
+    await closeCase({ close: [null, 'SIGKILL'] });
+  } catch (error) {
+    signaledCloseRejected = error.message.includes('SIGKILL');
+  }
+  assert(
+    signaledCloseRejected,
+    'graceful close rejects a signaled child exit',
+  );
+
+  let closeTimeoutRejected = false;
+  try {
+    await closeCase({
+      close: null,
+      response: new Promise(() => {}),
+      timeoutMs: 5,
+    });
+  } catch (error) {
+    closeTimeoutRejected = error.message.includes('did not close');
+  }
+  assert(
+    closeTimeoutRejected,
+    'graceful close has one bounded write-and-exit timeout',
+  );
 }

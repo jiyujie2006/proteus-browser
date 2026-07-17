@@ -14,6 +14,7 @@ export function parseDriveOptions(args, {
     chrome: defaultChrome,
     externalContainment: false,
     json: false,
+    linuxSandbox: null,
     platform: null,
     url: defaultUrl,
   };
@@ -29,7 +30,7 @@ export function parseDriveOptions(args, {
       if (arg === '--external-containment') values.externalContainment = true;
       continue;
     }
-    if (!['--url', '--chrome', '--platform'].includes(arg)) {
+    if (!['--url', '--chrome', '--linux-sandbox', '--platform'].includes(arg)) {
       throw new TypeError(`unknown argument: ${arg}`);
     }
     if (seen.has(arg)) throw new TypeError(`${arg} may only be supplied once`);
@@ -44,6 +45,7 @@ export function parseDriveOptions(args, {
       values.chrome = value;
       chromeExplicit = true;
     }
+    if (arg === '--linux-sandbox') values.linuxSandbox = value;
     if (arg === '--platform') values.platform = value;
   }
 
@@ -72,6 +74,24 @@ export function parseDriveOptions(args, {
   }
   if (!values.json && values.externalContainment) {
     throw new TypeError('--external-containment is only valid with --json');
+  }
+  if (values.linuxSandbox !== null && !isAbsolute(values.linuxSandbox)) {
+    throw new TypeError('--linux-sandbox must be an absolute path');
+  }
+  if (!values.json && values.linuxSandbox !== null) {
+    throw new TypeError('--linux-sandbox is only valid with --json');
+  }
+  if (values.json
+      && values.platform === 'linux-x64'
+      && values.linuxSandbox === null) {
+    throw new TypeError(
+      '--json --platform linux-x64 requires --linux-sandbox',
+    );
+  }
+  if (values.linuxSandbox !== null && values.platform !== 'linux-x64') {
+    throw new TypeError(
+      '--linux-sandbox is only valid with --platform linux-x64',
+    );
   }
   return {
     ...values,

@@ -49,7 +49,7 @@ consumers remain planned and must validate before their boundaries can ship.
 |---|---|---|
 | Fingerprint generator/CLI (emit/reload) | Generation validates strict typed shape + semantics before signing; reload rejects duplicate keys, unknown fields, unsupported versions, tampering, and invalid signatures ([tdd/02](../tdd/02-fingerprint-engine.md)). The low-level `sign_config` primitive signs a typed body; callers must use the validated generation/ingest boundary. | Implemented in M1A |
 | Independent Node conformance | Canonical hashes, fixed Ed25519 vector, tamper rejection, provenance, and V1/V2 config-scope output | Implemented in M1A |
-| Modified browser engine (ingest) | Shape + signature + semantics before first script, else fail closed ([tdd/01](../tdd/01-chromium-engine.md) §3) | Planned; Chromium patch is still a placeholder |
+| Modified browser engine (ingest) | Shape + signature + semantics before first script, else fail closed ([tdd/01](../tdd/01-chromium-engine.md) §3) | Planned for M1; its patch remains a backlog placeholder (the real active M0 layer0 patch is unrelated Network Time hardening) |
 | Manager (import) | Imported/edited profiles re-validated + coherence-checked ([tdd/07](../tdd/07-manager-and-storage.md) §7) | Planned for M3 |
 | Verification lab runtime | Rule catalog and cross-context/runtime coherence probes ([tdd/06](../tdd/06-verification-lab.md)) | Local/config checks exist; artifact-driven runtime gate is not complete |
 

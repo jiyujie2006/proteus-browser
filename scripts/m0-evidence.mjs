@@ -26,10 +26,17 @@ import { normalize } from '../verify-lab/src/normalize.mjs';
 import { RULES_VERSION } from '../verify-lab/src/rules.mjs';
 import { score } from '../verify-lab/src/score.mjs';
 import { buildControlledProbeBinding } from '../verify-lab/src/controlled-probe.mjs';
+import {
+  validateNetworkTimeAudit,
+} from '../verify-lab/src/network-time-audit.mjs';
 import { parseStrictJson } from './strict-json.mjs';
+import { readChromiumBaseline } from '../engine-chromium/scripts/baseline.mjs';
+import {
+  activePatchSeriesSha256,
+} from '../engine-chromium/scripts/patch-series.mjs';
 
 export const M0_EVIDENCE_SCHEMA_VERSION = '1.0.0';
-export const M0_ARTIFACT_REPORT_SCHEMA_VERSION = '1.1.0';
+export const M0_ARTIFACT_REPORT_SCHEMA_VERSION = '1.2.0';
 export const M0_EVIDENCE_ASSURANCE_LEVEL =
   'entrypoint-release-signed-scaffold/v1';
 export const M0_HARD_ASSURANCE_LEVEL =
@@ -253,17 +260,8 @@ function hashStableArtifactSnapshot(
 
 export function patchSeriesSha256(repo) {
   const root = join(repo, 'engine-chromium');
-  const entries = readFileSync(join(root, 'patches', 'series'), 'utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-  const hash = createHash('sha256');
-  for (const entry of entries) {
-    hash.update(entry);
-    hash.update('\0');
-    hash.update(readFileSync(join(root, 'patches', entry)));
-  }
-  return hash.digest('hex');
+  const baseline = readChromiumBaseline(join(root, 'CHROMIUM_BASELINE'));
+  return activePatchSeriesSha256(root, baseline.PATCH_PROFILE);
 }
 
 export function evidenceSigningInput(record) {
@@ -390,12 +388,28 @@ function auditM0BuildEvidenceDocument(
       `unsupported evidence schema ${String(evidence.schemaVersion)}`,
     );
   }
-  const currentPatchHash = patchSeriesSha256(repo);
-  if (evidence.patchSeriesSha256 !== currentPatchHash) {
-    failures.push('evidence patchSeriesSha256 does not match current patch bytes');
+  let baseline;
+  try {
+    baseline = readChromiumBaseline(
+      join(repo, 'engine-chromium', 'CHROMIUM_BASELINE'),
+    );
+  } catch (error) {
+    failures.push(`invalid Chromium baseline: ${error.message}`);
   }
-  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(evidence.chromiumCommit ?? '')) {
-    failures.push('chromiumCommit must be a full 40- or 64-hex commit digest');
+  let currentPatchHash;
+  try {
+    currentPatchHash = patchSeriesSha256(repo);
+  } catch (error) {
+    failures.push(`cannot hash current active patch series: ${error.message}`);
+  }
+  if (currentPatchHash
+      && evidence.patchSeriesSha256 !== currentPatchHash) {
+    failures.push('evidence patchSeriesSha256 does not match current active patch bytes');
+  }
+  if (!/^[0-9a-f]{40}$/.test(evidence.chromiumCommit ?? '')) {
+    failures.push('chromiumCommit must be a lowercase 40-hex commit digest');
+  } else if (baseline && evidence.chromiumCommit !== baseline.CHROMIUM_COMMIT) {
+    failures.push('chromiumCommit does not match the exact pinned baseline commit');
   }
 
   const platforms = evidence.platforms;
@@ -744,17 +758,35 @@ function verifyProvenance(
     );
   const buildDefinition = provenance.predicate?.buildDefinition;
   const externalParameters = buildDefinition?.externalParameters;
-  const baselineTag = readFileSync(
-    join(repo, 'engine-chromium', 'CHROMIUM_BASELINE'),
-    'utf8',
-  ).match(/^CHROMIUM_STABLE=(.+)$/m)?.[1];
+  let baseline;
+  try {
+    baseline = readChromiumBaseline(
+      join(repo, 'engine-chromium', 'CHROMIUM_BASELINE'),
+    );
+  } catch (error) {
+    failures.push(`${prefix} invalid Chromium baseline: ${error.message}`);
+    return;
+  }
+  const depotDependencyMatches = Array.isArray(dependencies)
+    && dependencies.some(
+      (dependency) =>
+        dependency?.uri === baseline.DEPOT_TOOLS_REPOSITORY.replace(/\.git$/u, '')
+        && dependency?.digest?.gitCommit === baseline.DEPOT_TOOLS_COMMIT,
+    );
   const buildDefinitionMatches =
     buildDefinition?.buildType
       === 'https://proteus.example/buildtypes/chromium-engine/v1'
-    && externalParameters?.chromiumTag === baselineTag
-    && externalParameters?.gnArgs === 'engine-chromium/build/args.gn'
-    && externalParameters?.gnArgsSha256
-      === `sha256:${sha256File(join(repo, 'engine-chromium', 'build', 'args.gn'))}`;
+    && externalParameters?.chromiumTag === baseline.CHROMIUM_STABLE
+    && externalParameters?.gnArgsTemplate === 'engine-chromium/build/args.gn'
+    && externalParameters?.effectiveGnArgs === 'args.gn'
+    && externalParameters?.gnArgsTemplateSha256
+      === `sha256:${sha256File(join(repo, 'engine-chromium', 'build', 'args.gn'))}`
+    && externalParameters?.effectiveGnArgsSha256
+      === externalParameters.gnArgsTemplateSha256;
+  const patchContractMatches =
+    buildDefinition?.internalParameters?.patchProfile === baseline.PATCH_PROFILE
+    && buildDefinition?.internalParameters?.depotToolsCommit
+      === baseline.DEPOT_TOOLS_COMMIT;
   const runMatches =
     provenance.predicate?.runDetails?.metadata?.invocationId === runId;
   const builderMatches =
@@ -776,7 +808,9 @@ function verifyProvenance(
       || !subjectMatches
       || patchHash !== `sha256:${evidence.patchSeriesSha256}`
       || !commitMatches
+      || !depotDependencyMatches
       || !buildDefinitionMatches
+      || !patchContractMatches
       || !runMatches
       || !builderMatches
       || !toolchainMatches
@@ -787,16 +821,40 @@ function verifyProvenance(
   }
 }
 
-function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
+export function validateM0ArtifactBaselineReport(
+  bytes,
+  {
+    artifactSha256,
+    platform,
+    repo,
+    label = 'verification report',
+  },
+) {
+  if (
+    typeof artifactSha256 !== 'string'
+    || !/^[0-9a-f]{64}$/u.test(artifactSha256)
+  ) {
+    throw new TypeError('artifact report requires a lowercase artifact SHA-256');
+  }
+  const expectedInspection = M0_ARTIFACT_INSPECTIONS[platform];
+  if (!expectedInspection) {
+    throw new TypeError(`unsupported artifact report platform ${String(platform)}`);
+  }
+  if (typeof repo !== 'string' || repo.length === 0 || repo.includes('\0')) {
+    throw new TypeError('artifact report repository root must be a safe path');
+  }
+  if (typeof label !== 'string' || label.length === 0) {
+    throw new TypeError('artifact report label must be non-empty');
+  }
+  const reportRepo = resolve(repo);
   let report;
   try {
     report = parseStrictJson(
       bytes,
-      `${prefix} verification report`,
+      label,
     );
   } catch (error) {
-    failures.push(`${prefix} invalid verification report JSON: ${error.message}`);
-    return;
+    throw new TypeError(`invalid verification report JSON: ${error.message}`);
   }
   const suite = Array.isArray(report.suites)
     ? report.suites.find((candidate) =>
@@ -808,6 +866,7 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
     'browserArtifactSha256',
     'artifactDriven',
     'executionIsolation',
+    'networkTimeAudit',
     'probe',
     'observation',
     'context',
@@ -828,17 +887,23 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
     'vectors',
   ]);
   const vectorNames = ['V1', 'V2', 'V3', 'V4', 'V5'];
-  const expectedInspection = M0_ARTIFACT_INSPECTIONS[platform];
   const inspection = report.artifactInspection;
   const inspectionMatches =
     hasExactKeys(inspection, ['artifactSha256', 'tool', 'architectures'])
-    && inspection?.artifactSha256 === artifactHash
+    && inspection?.artifactSha256 === artifactSha256
     && inspection?.tool === expectedInspection.tool
     && arraysEqual(inspection?.architectures, expectedInspection.architectures);
   const isolationMatches = isDeepStrictEqual(
     report.executionIsolation,
     M0_EXTERNAL_EXECUTION_ISOLATION,
   );
+  let networkTimeAuditMatches = false;
+  try {
+    validateNetworkTimeAudit(report.networkTimeAudit);
+    networkTimeAuditMatches = true;
+  } catch {
+    networkTimeAuditMatches = false;
+  }
   const vectorsComplete = suite
     && vectorNames.every((name) => {
       const vector = suite.vectors?.[name];
@@ -905,8 +970,9 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
         || Array.isArray(report.context)) {
       throw new TypeError('observation/context must be objects');
     }
-    const reference = JSON.parse(
-      readFileSync(join(repo, 'verify-lab', 'data', 'reference.json'), 'utf8'),
+    const reference = parseStrictJson(
+      readFileSync(join(reportRepo, 'verify-lab', 'data', 'reference.json')),
+      'V1-V5 reference data',
     );
     if (reference._rulesVersion !== RULES_VERSION) {
       throw new TypeError('reference data and rule catalog versions differ');
@@ -914,7 +980,7 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
     recomputed = score(normalize(report.observation, report.context), reference);
     probeMatches = isDeepStrictEqual(
       report.probe,
-      buildControlledProbeBinding(join(repo, 'verify-lab')),
+      buildControlledProbeBinding(join(reportRepo, 'verify-lab')),
     );
   } catch {
     recomputed = null;
@@ -931,9 +997,10 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
       || !suiteShapeMatches
       || report.schemaVersion !== M0_ARTIFACT_REPORT_SCHEMA_VERSION
       || report.platform !== platform
-      || report.browserArtifactSha256 !== artifactHash
+      || report.browserArtifactSha256 !== artifactSha256
       || report.artifactDriven !== true
       || !isolationMatches
+      || !networkTimeAuditMatches
       || !probeMatches
       || !inspectionMatches
       || report.completed !== true
@@ -952,9 +1019,29 @@ function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
       || !hasMeasuredVector
       || !failedCountsMatch
       || !summaryMatches) {
-    failures.push(
-      `${prefix} verification report is not a complete artifact-driven baseline report`,
+    throw new TypeError(
+      'verification report is not a complete artifact-driven baseline report',
     );
+  }
+  return Object.freeze({
+    aggregate: suite.aggregate,
+    coverageComplete: suite.coverageComplete,
+    gated: suite.gated,
+    report,
+    verdict: suite.verdict,
+  });
+}
+
+function verifyReport(bytes, artifactHash, platform, prefix, failures, repo) {
+  try {
+    validateM0ArtifactBaselineReport(bytes, {
+      artifactSha256: artifactHash,
+      platform,
+      repo,
+      label: `${prefix} verification report`,
+    });
+  } catch (error) {
+    failures.push(`${prefix} ${error.message}`);
   }
 }
 

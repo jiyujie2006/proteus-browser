@@ -10,7 +10,7 @@
 // Usage:
 //   node tools/drive-chrome.mjs [--url URL] [--chrome /path]
 //   node tools/drive-chrome.mjs --json --external-containment
-//     --chrome /path --platform <id>
+//     --chrome /path --platform <id> [--linux-sandbox /root-owned/path]
 
 import { execFileSync, spawn } from 'node:child_process';
 import {
@@ -29,9 +29,14 @@ import { normalize } from '../src/normalize.mjs';
 import { score } from '../src/score.mjs';
 import { renderReport } from '../src/report.mjs';
 import { buildArtifactBaselineReport } from '../src/artifact-report.mjs';
+import { closeBrowserGracefully } from '../src/browser-close.mjs';
 import { CdpPipeClient } from '../src/cdp-pipe.mjs';
 import { startControlledProbeServer } from '../src/controlled-probe.mjs';
 import { parseDriveOptions } from '../src/drive-options.mjs';
+import { validateLinuxSandbox } from '../src/linux-sandbox.mjs';
+import {
+  readNetworkTimeAuditFile,
+} from '../src/network-time-audit.mjs';
 import {
   M0_EXTERNAL_EXECUTION_ISOLATION,
   sha256File,
@@ -328,7 +333,7 @@ async function acquireWindowsLaunchGuard(executablePath, expected) {
   };
 }
 
-function machineEnvironment(userDataDir) {
+function machineEnvironment(userDataDir, linuxSandbox) {
   const inherited = process.env;
   const environment = {
     HOME: userDataDir,
@@ -343,6 +348,9 @@ function machineEnvironment(userDataDir) {
   };
   for (const name of ['ComSpec', 'SystemDrive', 'SystemRoot', 'WINDIR']) {
     if (inherited[name]) environment[name] = inherited[name];
+  }
+  if (linuxSandbox !== null) {
+    environment.CHROME_DEVEL_SANDBOX = linuxSandbox;
   }
   return environment;
 }
@@ -406,6 +414,7 @@ async function main(options) {
     chrome: requestedChrome,
     externalContainment: EXTERNAL_CONTAINMENT,
     json: JSON_OUTPUT,
+    linuxSandbox: requestedLinuxSandbox,
     platform: PLATFORM,
     url: URL,
   } = options;
@@ -420,11 +429,16 @@ async function main(options) {
       );
     }
   }
+  const linuxSandbox = requestedLinuxSandbox === null
+    ? null
+    : validateLinuxSandbox(requestedLinuxSandbox);
   const userDataDir = mkdtempSync(join(tmpdir(), 'proteus-chrome-'));
+  const netLogPath = join(userDataDir, 'netlog.json');
   let chrome = null;
   let client = null;
   let probeServer = null;
   let launchGuard = null;
+  let browserCloseRequested = false;
   let stderr = '';
 
   try {
@@ -444,10 +458,16 @@ async function main(options) {
       '--no-first-run',
       '--no-default-browser-check',
       '--disable-gpu',
+      ...(JSON_OUTPUT ? [
+        `--log-net-log=${netLogPath}`,
+        '--net-log-capture-mode=Everything',
+      ] : []),
       'about:blank',
     ], {
       detached: process.platform !== 'win32',
-      env: JSON_OUTPUT ? machineEnvironment(userDataDir) : process.env,
+      env: JSON_OUTPUT
+        ? machineEnvironment(userDataDir, linuxSandbox)
+        : process.env,
       stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
     });
     chrome.stderr.on('data', (chunk) => {
@@ -456,9 +476,11 @@ async function main(options) {
     client = new CdpPipeClient(chrome.stdio[4], chrome.stdio[3]);
     chrome.once('error', (error) => client.abort(error));
     chrome.once('exit', (code, signal) => {
-      client.abort(new Error(
-        `Chromium exited before collection completed (${signal ?? code})`,
-      ));
+      if (!browserCloseRequested) {
+        client.abort(new Error(
+          `Chromium exited before collection completed (${signal ?? code})`,
+        ));
+      }
     });
     if (JSON_OUTPUT) {
       launchGuard?.assertHeld();
@@ -531,9 +553,19 @@ async function main(options) {
         PLATFORM,
       );
       launchGuard?.assertHeld();
+      await closeBrowserGracefully(chrome, client, {
+        onCommandWritten() {
+          browserCloseRequested = true;
+        },
+      });
+      client.close();
+      client = null;
+      launchGuard?.assertHeld();
+      const networkTimeAudit = readNetworkTimeAuditFile(netLogPath);
       const report = buildArtifactBaselineReport({
         artifactPath: CHROME,
         executionIsolation: M0_EXTERNAL_EXECUTION_ISOLATION,
+        networkTimeAudit,
         observation: raw,
         platform: PLATFORM,
         probe: probeServer.binding,
@@ -586,7 +618,12 @@ async function main(options) {
       cleanupError ??= error;
     }
     try {
-      rmSync(userDataDir, { recursive: true, force: true });
+      rmSync(userDataDir, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === 'win32' ? 5 : 0,
+        retryDelay: process.platform === 'win32' ? 100 : 0,
+      });
     } catch (error) {
       cleanupError ??= error;
     }

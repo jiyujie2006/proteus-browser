@@ -14,9 +14,10 @@ persona request + 32-byte seed + versioned seed dataset
   → independent fail-closed reload + verify
 ```
 
-It intentionally stops at the honest boundary: the Chromium patches are still
-placeholders until they are implemented and built against a real Chromium
-checkout. Passing these tests proves config generation plus standalone
+It intentionally stops at the honest boundary: the Chromium-native M1 patch
+specifications are still backlog placeholders until they are implemented and
+built against a real Chromium checkout. Passing these tests proves config
+generation plus standalone
 reload/verification contract conformance; it does not prove Chromium ingest,
 native browser surfaces, or cross-context propagation.
 

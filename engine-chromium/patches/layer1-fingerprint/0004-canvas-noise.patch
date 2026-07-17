@@ -3,11 +3,11 @@
 # Threat-vectors: V2 (stable-unique but coarse-common), V3 (consistent across contexts)
 # Upstream-risk: MED. html_canvas_element.cc (ToDataURLInternal, toBlob) + 2D getImageData.
 # Tests: v3-traces/cross-context, v2-rarity/canvas-stability
-# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+# Target-milestone: M1
+# Status: BACKLOG
 #
-# This header is a valid, reviewable specification. The unified diff below is
-# empty in M0 (no Chromium checkout to diff against) and will be produced by
-# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
-# during M1 implementation.
+# This file is a valid, reviewable M1 backlog specification. Its git-format
+# patch payload will be produced against the pinned baseline (see
+# ../../CHROMIUM_BASELINE) during M1 implementation.
 #
-# (no diff hunks yet — M0 placeholder)
+# (no diff hunks yet — M1 backlog placeholder)

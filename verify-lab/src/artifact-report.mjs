@@ -10,11 +10,13 @@ import { loadReference } from './reference.mjs';
 import { normalize } from './normalize.mjs';
 import { score } from './score.mjs';
 import { RULES_VERSION } from './rules.mjs';
+import { validateNetworkTimeAudit } from './network-time-audit.mjs';
 
 export function buildArtifactBaselineReport({
   artifactPath,
   context = {},
   executionIsolation,
+  networkTimeAudit,
   observation,
   platform,
   probe,
@@ -40,6 +42,7 @@ export function buildArtifactBaselineReport({
       'artifact baseline requires the explicit unverified external-isolation claim',
     );
   }
+  validateNetworkTimeAudit(networkTimeAudit);
   const scored = score(normalize(observation, context), loadReference());
   if (scored.scope !== 'runtime') {
     throw new TypeError('artifact baseline requires a runtime-scoped score');
@@ -53,6 +56,7 @@ export function buildArtifactBaselineReport({
     browserArtifactSha256: artifactSha256,
     artifactDriven: true,
     executionIsolation: { ...executionIsolation },
+    networkTimeAudit: { ...networkTimeAudit },
     probe,
     observation,
     context,

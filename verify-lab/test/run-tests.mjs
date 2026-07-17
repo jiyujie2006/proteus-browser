@@ -6,7 +6,15 @@
 //
 // Run: node test/run-tests.mjs
 
-import { readFileSync, readdirSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -17,6 +25,15 @@ import { runP0RegressionTests } from './p0-regressions.mjs';
 import { runStaticServerSecurityTests } from './static-server-security.mjs';
 import { runLiveHarnessSecurityTests } from './live-harness-security.mjs';
 import { parseDriveOptions } from '../src/drive-options.mjs';
+import {
+  assertLinuxSandboxMetadata,
+  validateLinuxSandbox,
+} from '../src/linux-sandbox.mjs';
+import {
+  auditNetworkTimeNetLog,
+  readNetworkTimeAuditFile,
+  validateNetworkTimeAudit,
+} from '../src/network-time-audit.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -106,12 +123,19 @@ const boundDriveOptions = parseDriveOptions(
     '/build/chrome',
     '--platform',
     'linux-x64',
+    '--linux-sandbox',
+    '/usr/local/lib/proteus-m0/chrome_sandbox',
   ],
   { defaultChrome: '/installed/stock-chrome' },
 );
 assert(
   boundDriveOptions.chrome === boundDriveOptions.artifactPath,
   'machine report hashes the exact executable launched by the live harness',
+);
+assert(
+  boundDriveOptions.linuxSandbox
+    === '/usr/local/lib/proteus-m0/chrome_sandbox',
+  'Linux machine report binds an explicit controlled setuid sandbox',
 );
 let missingExternalContainmentRejected = false;
 try {
@@ -127,6 +151,209 @@ assert(
   missingExternalContainmentRejected,
   'machine report requires externally enforced ephemeral-runner containment',
 );
+let missingLinuxSandboxRejected = false;
+try {
+  parseDriveOptions(
+    [
+      '--json',
+      '--external-containment',
+      '--chrome',
+      '/build/chrome',
+      '--platform',
+      'linux-x64',
+    ],
+    { defaultChrome: '/installed/stock-chrome' },
+  );
+} catch (error) {
+  missingLinuxSandboxRejected = error.message.includes('--linux-sandbox');
+}
+assert(
+  missingLinuxSandboxRejected,
+  'Linux machine report requires an explicit controlled setuid sandbox',
+);
+let sandboxOnWrongPlatformRejected = false;
+try {
+  parseDriveOptions(
+    [
+      '--json',
+      '--external-containment',
+      '--chrome',
+      '/build/chrome',
+      '--platform',
+      'macos-universal',
+      '--linux-sandbox',
+      '/usr/local/lib/proteus-m0/chrome_sandbox',
+    ],
+    { defaultChrome: '/installed/stock-chrome' },
+  );
+} catch (error) {
+  sandboxOnWrongPlatformRejected =
+    error.message.includes('only valid with --platform linux-x64');
+}
+assert(
+  sandboxOnWrongPlatformRejected,
+  'non-Linux machine reports reject the Linux sandbox claim',
+);
+const safeSandboxStat = {
+  isFile: () => true,
+  isSymbolicLink: () => false,
+  mode: 0o104755n,
+  uid: 0n,
+};
+let unsafeSandboxOwnerRejected = false;
+try {
+  assertLinuxSandboxMetadata('/sandbox', {
+    ...safeSandboxStat,
+    uid: 1000n,
+  });
+} catch (error) {
+  unsafeSandboxOwnerRejected = error.message.includes('owned by uid 0');
+}
+assert(
+  unsafeSandboxOwnerRejected,
+  'Linux sandbox validation rejects non-root ownership',
+);
+let unsafeSandboxModeRejected = false;
+try {
+  assertLinuxSandboxMetadata('/sandbox', {
+    ...safeSandboxStat,
+    mode: 0o100755n,
+  });
+} catch (error) {
+  unsafeSandboxModeRejected = error.message.includes('exact mode 4755');
+}
+assert(
+  unsafeSandboxModeRejected,
+  'Linux sandbox validation rejects missing or excessive permission bits',
+);
+assertLinuxSandboxMetadata('/sandbox', safeSandboxStat);
+assert(true, 'Linux sandbox validation accepts only root-owned mode-4755 files');
+let nonCanonicalSandboxRejected = false;
+try {
+  validateLinuxSandbox('/sandbox', {
+    lstat: () => ({
+      ...safeSandboxStat,
+      dev: 1n,
+      ino: 2n,
+    }),
+    realpath: () => '/real/sandbox',
+  });
+} catch (error) {
+  nonCanonicalSandboxRejected = error.message.includes('canonical path');
+}
+assert(
+  nonCanonicalSandboxRejected,
+  'Linux sandbox validation rejects symlinked path components',
+);
+let reboundSandboxRejected = false;
+let sandboxStatCalls = 0;
+try {
+  validateLinuxSandbox('/sandbox', {
+    lstat: () => ({
+      ...safeSandboxStat,
+      dev: 1n,
+      ino: BigInt(++sandboxStatCalls),
+    }),
+    realpath: (path) => path,
+  });
+} catch (error) {
+  reboundSandboxRejected = error.message.includes('changed while');
+}
+assert(
+  reboundSandboxRejected,
+  'Linux sandbox validation rejects path rebinding during validation',
+);
+const cleanNetworkTimeAudit = auditNetworkTimeNetLog({
+  events: [{
+    type: 1,
+    params: { url: 'http://127.0.0.1/controlled-probe' },
+  }],
+});
+assert(
+  validateNetworkTimeAudit(cleanNetworkTimeAudit).defaultQueryAbsent === true,
+  'Network Time audit accepts a non-empty NetLog without the Google time endpoint',
+);
+const leakingNetworkTimeAudit = auditNetworkTimeNetLog({
+  events: [{
+    type: 2,
+    params: {
+      host: 'clients2.google.com',
+      path: '/time/1/current?cup2key=fixture',
+    },
+  }],
+});
+let networkTimeLeakRejected = false;
+try {
+  validateNetworkTimeAudit(leakingNetworkTimeAudit);
+} catch (error) {
+  networkTimeLeakRejected = error.message.includes('endpoint was absent');
+}
+assert(
+  networkTimeLeakRejected,
+  'Network Time audit rejects a NetLog containing the Google time endpoint',
+);
+const networkTimeFixtureRoot = mkdtempSync(join(tmpdir(), 'proteus-netlog-test-'));
+try {
+  const netLogPath = join(networkTimeFixtureRoot, 'netlog.json');
+  writeFileSync(netLogPath, JSON.stringify({
+    events: [{
+      type: 1,
+      params: { url: 'http://127.0.0.1/controlled-probe' },
+    }],
+  }));
+  assert(
+    readNetworkTimeAuditFile(netLogPath, { maxBytes: 1024 })
+      .defaultQueryAbsent === true,
+    'Network Time audit reads one stable bounded NetLog file descriptor',
+  );
+  writeFileSync(netLogPath, '{"events":[],"events":[]}');
+  let duplicateNetLogRejected = false;
+  try {
+    readNetworkTimeAuditFile(netLogPath, { maxBytes: 1024 });
+  } catch (error) {
+    duplicateNetLogRejected = error.message.includes('duplicate object key');
+  }
+  assert(
+    duplicateNetLogRejected,
+    'Network Time audit rejects ambiguous duplicate NetLog keys',
+  );
+  writeFileSync(netLogPath, JSON.stringify({
+    events: [{ params: { padding: 'x'.repeat(128) } }],
+  }));
+  let oversizedNetLogRejected = false;
+  try {
+    readNetworkTimeAuditFile(netLogPath, { maxBytes: 32 });
+  } catch (error) {
+    oversizedNetLogRejected = error.message.includes('size must be');
+  }
+  assert(
+    oversizedNetLogRejected,
+    'Network Time audit rejects a NetLog beyond its byte bound',
+  );
+  const targetPath = join(networkTimeFixtureRoot, 'target.json');
+  const symlinkPath = join(networkTimeFixtureRoot, 'netlog-link.json');
+  writeFileSync(targetPath, JSON.stringify({ events: [{ type: 1 }] }));
+  try {
+    symlinkSync(targetPath, symlinkPath);
+    let symlinkNetLogRejected = false;
+    try {
+      readNetworkTimeAuditFile(symlinkPath, { maxBytes: 1024 });
+    } catch (error) {
+      symlinkNetLogRejected = error.message.includes('non-symlink');
+    }
+    assert(
+      symlinkNetLogRejected,
+      'Network Time audit rejects a symlinked NetLog path',
+    );
+  } catch (error) {
+    assert(
+      true,
+      `Network Time symlink test skipped where creation is unavailable (${error.code})`,
+    );
+  }
+} finally {
+  rmSync(networkTimeFixtureRoot, { recursive: true, force: true });
+}
 let interactiveContainmentClaimRejected = false;
 try {
   parseDriveOptions(

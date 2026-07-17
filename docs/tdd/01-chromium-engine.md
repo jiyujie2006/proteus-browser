@@ -1,7 +1,8 @@
 # TDD 01 — Chromium Engine Modification
 
-**Status:** Design; native implementation not started · **Serves principles:**
-II, III, VIII, IX · **Threat vectors:** V1, V2, V3, V5
+**Status:** M0 layer0 patch implemented; M1 native fingerprint/config path not
+started · **Serves principles:** II, III, VIII, IX · **Threat vectors:** V1, V2,
+V3, V5
 
 This is the flagship engineering effort. It specifies how we turn stock Chromium
 into an engine that natively produces a coherent, configurable fingerprint with
@@ -16,8 +17,11 @@ binary serving all profiles.
 > **Current boundary:** M1A implements the non-UI Rust generator, strict
 > validator, Ed25519 envelope, standalone fail-closed verifier, and independent
 > Node conformance vectors. It does **not** implement this TDD's Chromium path.
-> Every listed Chromium patch remains a metadata-only placeholder, and no
-> pre-script ingest, native surface, worker propagation, or engine runtime test
+> The sole active M0 layer0 file is a real Proteus-authored patch that defaults
+> Google-backed Network Time querying off; an explicit feature override can
+> re-enable it, so it is not complete de-Googling. The 16 M1/M3 specifications
+> remain metadata-only backlogs and are not M0 build inputs. No pre-script
+> ingest, native fingerprint surface, worker propagation, or engine runtime test
 > exists.
 
 ## 1. Goals & non-goals
@@ -44,8 +48,11 @@ rationale header per patch).
 
 ```
 patches/
-  series                      # ordered list, applied top-to-bottom
-  layer0-degoogle/            # remove Google telemetry/integration (ungoogled-derived)
+  series                      # active build input, applied top-to-bottom
+  backlog/
+    m1.series                 # 13 config/surface + 2 basic trace-removal specs
+    m3.series                 # stealth-CDP endpoint spec
+  layer0-degoogle/            # Proteus Network Time default-off patch
   layer1-fingerprint/         # the config plumbing + native surfaces
     0001-config-ingest.patch
     0002-navigator-surfaces.patch
@@ -66,12 +73,29 @@ patches/
     0003-stealth-cdp.patch
 ```
 
+The current `m0-layer0-v1` profile contains only the layer0 entry in
+`patches/series`. `check-series.mjs` audits the active series and both backlogs
+as one disjoint catalog, but apply, provenance, and artifact hashing consume
+only the active series. Promoting work is an atomic move from exactly one
+backlog into `series`, together with its real payload, tests, licensing review,
+and patch-profile update; a patch may never appear in both places.
+
+The active patch changes only
+`components/network_time/network_time_tracker.cc`: it makes
+`kNetworkTimeServiceQuerying` disabled by default on desktop and Android, which
+prevents the default request to Google's Network Time endpoint. Chromium's
+explicit feature override remains available for controlled upstream tests.
+That narrow behavior is intentional; the patch must not be described as a
+complete de-Google layer.
+
 Each patch carries:
 ```
 # Rationale: <why>
 # Surface: <fingerprint surface / threat vector>
 # Upstream-risk: <how likely to conflict on rebase; notes for the bot>
 # Tests: <verification-lab probes that must stay green>
+# Target-milestone: <M0/M1/M3>
+# Status: <ACTIVE | ACTIVE PLACEHOLDER | BACKLOG>
 ```
 
 **Why layered:** layer 0 is upstream-ish and stable; layer 1 is our core IP and
@@ -344,7 +368,7 @@ building and rebasing it. Contract between them:
 ## 12. Open questions
 
 - Exact Mojo interface vs. serialized-blob trade-off for config propagation
-  (perf vs. rebase stability) — prototype both in M0/M1.
+  (perf vs. rebase stability) — prototype both in M1.
 - Whether to quantize `performance.now()` globally or per-surface.
 - Font strategy on Linux hosts for macOS personas where key fonts aren't
   redistributable — how large a coherent substitute set we can present.

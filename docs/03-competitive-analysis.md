@@ -90,8 +90,10 @@ it, take the ungoogled-chromium patch methodology as prior art, and add the
 consistency engine, network system, product, verification lab, and sustainability
 model around them. This is collaboration, not competition. See
 [third-party licensing](10-third-party-licensing.md) and
-[CONTRIBUTING.md](../CONTRIBUTING.md). No upstream engine or patch payload is
-present in the current pre-alpha repository.
+[CONTRIBUTING.md](../CONTRIBUTING.md). No upstream engine checkout, binary, or
+copied upstream patch payload is present in the current pre-alpha repository.
+The one active Proteus-authored patch contains the minimum BSD-3-Clause Chromium
+diff context needed to change the Network Time feature default.
 
 ## Class D — Commercial fingerprinting (FingerprintJS Pro et al.)
 

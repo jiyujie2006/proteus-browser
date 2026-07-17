@@ -1,0 +1,18 @@
+# Proteus M1 patch backlog — specifications only, never applied by M0 builds.
+# Target-milestone: M1
+# Status: BACKLOG
+layer1-fingerprint/0001-config-ingest.patch
+layer1-fingerprint/0002-navigator-surfaces.patch
+layer1-fingerprint/0003-screen-surfaces.patch
+layer1-fingerprint/0004-canvas-noise.patch
+layer1-fingerprint/0005-webgl-surfaces.patch
+layer1-fingerprint/0006-webgpu-surfaces.patch
+layer1-fingerprint/0007-audio-noise.patch
+layer1-fingerprint/0008-font-policy.patch
+layer1-fingerprint/0009-timezone-locale.patch
+layer1-fingerprint/0010-client-hints.patch
+layer1-fingerprint/0011-media-devices.patch
+layer1-fingerprint/0012-speech-voices.patch
+layer1-fingerprint/0013-misc-surfaces.patch
+layer2-antiautomation/0001-remove-webdriver.patch
+layer2-antiautomation/0002-no-automation-switches.patch

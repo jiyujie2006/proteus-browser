@@ -162,10 +162,14 @@ the license and adds no use restriction.
 
 **Pre-alpha / non-UI core work in progress.** Two tracks must be kept separate:
 
-- The local M0 ruler and tooling scaffold are runnable. The hard M0 exit has not
-  passed: the Chromium patch files have no real diff hunks, and there is no
-  signed, independently reproducible Win/macOS/Linux engine bundle or
-  builder-attested live verification evidence. See [`M0.md`](M0.md).
+- The M0 ruler, hard contracts, and GitHub-hosted reference workflow are
+  runnable/testable, but the production build path is not complete: the current
+  runner class lacks Chromium-scale macOS storage, and a trusted
+  external-ephemeral controller/finalizer has not been implemented. The hard
+  exit therefore cannot yet produce its six A/B builds. The sole active layer0
+  patch defaults Google-backed Network Time querying off; this is not complete
+  de-Googling. The 16 M1/M3 specifications are a separate backlog and do not
+  gate or hash into M0. See [`M0.md`](M0.md).
 - The bounded **M1A signed-config core** is complete: deterministic Rust
   generation, strict structural and semantic validation, Ed25519 signing and
   fail-closed verification, fixed vectors, and independent Node conformance

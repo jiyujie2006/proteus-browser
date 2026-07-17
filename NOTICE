@@ -2,3 +2,8 @@ Proteus
 Copyright 2026 jiyujie2006 and Proteus contributors
 
 This product includes software developed by the Proteus project contributors.
+
+The M0 Chromium patch contains source context from Chromium:
+Copyright 2015 The Chromium Authors
+Licensed under the BSD 3-Clause License; see
+LICENSES/Chromium-BSD-3-Clause.txt.

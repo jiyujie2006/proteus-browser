@@ -1,11 +1,12 @@
-# Pinned Chromium baseline that the patch series targets and the tracking bot
-# watches. The tracking bot (tracking-bot/pipeline.mjs) compares the latest
-# upstream stable against this and, when newer, drives the rebase pipeline.
-#
-# Format: one KEY=VALUE per line. Keep in sync with build manifests.
+# Immutable M0 source/tooling baseline. This file is parsed as strict data by
+# scripts/baseline.mjs; it is never sourced as shell.
+SCHEMA_VERSION=1
+CHROMIUM_REPOSITORY=https://chromium.googlesource.com/chromium/src.git
 CHROMIUM_STABLE=150.0.7871.124
+CHROMIUM_COMMIT=9261fd0a595ac4964ea84e6bd4a025c1173a2ffa
+DEPOT_TOOLS_REPOSITORY=https://chromium.googlesource.com/chromium/tools/depot_tools.git
+DEPOT_TOOLS_COMMIT=523cac151f2d6c6d0849f35753613864fc38850f
+PATCH_PROFILE=m0-layer0-v1
 CHANNEL=stable
-# Milestone this baseline corresponds to (informational).
 MILESTONE=150
-# Date the baseline was pinned (ISO). Updated by the tracking bot on promotion.
 PINNED_AT=2026-07-17

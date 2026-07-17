@@ -11,13 +11,12 @@ symbol_level = 1
 blink_symbol_level = 0
 
 # --- Reproducibility ---------------------------------------------------------
-# Strip build paths so the artifact doesn't embed absolute paths (a key source of
-# non-determinism). The path-map makes compilation independent of the checkout dir.
-strip_absolute_paths_from_debug_symbols = true
-
-# Do not embed build timestamps / host info.
-# (Chromium honors these; keep them explicit so a reviewer sees the intent.)
-enable_stripping = true
+# Chromium M150 assigns strip_absolute_paths_from_debug_symbols directly on
+# Linux and Windows rather than declaring it as a caller-settable arg, while
+# enable_stripping is Apple-only. Do not place either platform-specific name in
+# this shared template: `gn gen --fail-on-unused-args` must remain meaningful.
+# The build records capture and validate each platform's complete effective args,
+# and A/B complete-tree equality is the final reproducibility proof.
 
 # Deterministic toolchain: pin to the bundled toolchain, no host-derived paths.
 use_thin_lto = true
@@ -38,9 +37,9 @@ enable_mdns = false
 # a PR that adds `disable_sandbox`-style args must be rejected in review.
 
 # --- Build performance (does not affect output determinism) ------------------
-# cc_wrapper is provided by the build host env (sccache/reclient), not hard-coded
-# here, so the reproducibility hash is independent of the cache backend.
-# Example on the farm: cc_wrapper = "sccache"
+# M0 does not permit a caller-supplied cc_wrapper. A cache wrapper may only be
+# introduced later through a reviewed, version-pinned build-contract revision
+# whose effective args and binary digest are included in provenance.
 
 # --- Target ------------------------------------------------------------------
 target_cpu = "x64"

@@ -6,9 +6,15 @@ in the [TDDs](tdd/); this is the map that shows how they connect.
 
 > **Implementation status:** this document describes the target system. Today,
 > the bounded M1A Rust signed-config core and independent Node conformance checks
-> are implemented. The Chromium tree is still a patch/build scaffold: no native
-> config ingest, fingerprint surfaces, cross-context propagation, engine binary,
-> Manager, sidecar, or UI exists yet. The hard M0 build exit is also still open;
+> are implemented. The Chromium M0 contracts and GitHub-hosted reference
+> workflow are implemented, but its production runner/controller backend is not
+> and no authenticated engine binary has passed the six-build hard gate; native
+> config ingest, fingerprint surfaces, cross-context
+> propagation, Manager, sidecar, and UI do not exist. One real
+> Proteus-authored layer0 patch is the active M0 input; it only defaults
+> Google-backed Network Time querying off and is not a complete de-Google
+> claim. Sixteen later-milestone specifications are held in separate backlogs.
+> The hard M0 build exit is still evidence-gated;
 > see [M0.md](../M0.md) and [M1A.md](../M1A.md).
 
 ## 1. Design constraints that shape the architecture
@@ -94,10 +100,12 @@ The heart. A patched browser that reads the signed config at startup and produce
 all fingerprint surfaces natively, applies anti-CDP measures, exposes a stealth
 CDP endpoint for automation, and stores its profile data in an encrypted
 directory. One binary per engine family serves all profiles of that family.
-This is target architecture, not current implementation: all Chromium patches
-are still metadata-only placeholders. Detail:
-[tdd/01](tdd/01-chromium-engine.md) and the Firefox/Camoufox integration notes
-therein.
+This remains target architecture, not current implementation. The active M0
+layer0 file is a real, bounded Network Time default-off patch; it implements no
+signed-config ingest or fingerprint/automation surface. The other 16 authored
+files remain M1/M3 metadata-only backlog specifications and are not current
+build inputs. Detail: [tdd/01](tdd/01-chromium-engine.md) and the
+Firefox/Camoufox integration notes therein.
 
 ### Network sidecar (Go, one per profile)
 A per-profile local proxy the engine points at. It builds the upstream proxy

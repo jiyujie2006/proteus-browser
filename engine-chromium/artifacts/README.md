@@ -1,8 +1,18 @@
 # M0 build evidence
 
-This directory is empty until the real three-platform build farm downloads its
-outputs. The current schema is a deliberately bounded **entrypoint evidence
-layer**, not sufficient evidence for the hard M0 exit. `scripts/m0-evidence.mjs`
+This directory keeps schemas and, during the aggregate/hard-gate workflows,
+the downloaded records for six real builds. The current hard format is
+`m0-evidence-v2.schema.json` /
+`m0-build-evidence-v2.json`, with assurance
+`full-bundle-builder-attested/v2`. `scripts/m0-evidence-v2.mjs` recomputes the
+complete bundle tree, package/runtime closure, dependency and toolchain locks,
+effective GN args, artifact licenses/SBOM, live V1–V5 report, raw Sigstore
+statements, and GitHub repository/run/job/check/artifact identities. A and B
+must match for each of Windows x64, macOS universal, and Linux x64.
+
+The older `m0-build-evidence.json` format is a deliberately bounded
+**entrypoint evidence layer**, not sufficient evidence for the hard M0 exit.
+`scripts/m0-evidence.mjs`
 recomputes every referenced digest, compares two declared entrypoint files,
 checks in-toto/SLSA-shaped subject and source fields, re-scores a
 release-signed runtime baseline report, and verifies its Ed25519 evidence
@@ -11,13 +21,12 @@ signature against the expected repository-pinned key at
 provisioned yet, so real assembly remains unavailable; tests use isolated
 fixture keys only.
 
-The verifier reports assurance
+The legacy verifier reports assurance
 `entrypoint-release-signed-scaffold/v1`. The roadmap gate requires
-`full-bundle-builder-attested/v1`, so this layer can never make M0 green by
-itself. The missing higher layer must cover the complete engine bundle
-(DLL/framework/pak/ICU/locales/fonts/signed dataset/manifest), independently
-authenticated builder attestations and workflow runs, the effective GN args and
-fully pinned toolchain, and an attested live-harness execution.
+`full-bundle-builder-attested/v2`, so this layer can never make M0 green by
+itself. The implemented v2 workflow covers the complete engine bundle,
+independently authenticated builder attestations/workflow runs, effective GN
+args, resolved inputs, the complete toolchain, and an artifact-driven live run.
 
 Each platform record (`windows-x64`, `macos-universal`, `linux-x64`) contains:
 
@@ -46,12 +55,12 @@ artifact's PE32+/ELF64/Mach-O fat headers directly and rejects a declared
 architecture that is absent from the bytes, including either missing x86_64 or
 arm64 slice in macOS universal.
 
-These checks establish internal consistency; a release signer can still supply a
+The legacy checks establish internal consistency; a release signer can still supply a
 synthetic observation or self-asserted provenance. They do not prove that an
 independent builder produced the bytes or that the live harness ran. Platform
-code-signing validation, builder/OIDC attestations, full-bundle reproducibility,
-effective generated `args.gn`, and complete pinned toolchain validation remain
-build-farm work.
+builder/OIDC attestations, full-bundle reproducibility, effective generated
+`args.gn`, and complete pinned toolchain validation are therefore enforced by
+the v2 aggregate and hard gate instead.
 
 The report records only
 `runner=external-ephemeral-claimed`, `attestation=none`, and
@@ -66,8 +75,20 @@ The non-UI live harness can produce this report directly from a built engine:
 ```bash
 node verify-lab/tools/drive-chrome.mjs --json --external-containment \
   --chrome /path/to/engine-executable \
-  --platform linux-x64 > engine-chromium/artifacts/linux-x64.verification.json
+  --platform linux-x64 \
+  --linux-sandbox /root-owned/mode-4755/chrome_sandbox \
+  > engine-chromium/artifacts/linux-x64.verification.json
 ```
+
+Linux machine mode validates that the sandbox path is canonical, is an
+ordinary non-symlink file owned by uid 0, and has exact mode `4755`. The
+GitHub-hosted M0 builder installs the sandbox into a root-controlled directory
+before running the live report; it never disables the Chromium sandbox.
+Machine mode also starts Chromium with full NetLog capture, sends the root
+`Browser.close` command, requires a successful command write and normal process
+exit, then reads the flushed log through one bounded stable file descriptor.
+The report is rejected if it observes
+`clients2.google.com/time/1/current`.
 
 All paths are relative to this directory.
 Absolute paths, traversal, symlinks, missing files, cross-platform digest reuse,
@@ -111,7 +132,7 @@ The draft has exactly this shape; every referenced path is relative to this
 ```json
 {
   "schemaVersion": "1.0.0",
-  "chromiumCommit": "0123456789abcdef0123456789abcdef01234567",
+  "chromiumCommit": "9261fd0a595ac4964ea84e6bd4a025c1173a2ffa",
   "platforms": {
     "windows-x64": {
       "buildA": {
@@ -191,5 +212,6 @@ The draft has exactly this shape; every referenced path is relative to this
 
 Each `runId` must be globally unique and must exactly match the corresponding
 provenance `invocationId`; the provenance builder ID, observed toolchain, target
-architectures, source commit, patch series, GN args, and report contents remain
-subject to the verifier rules described above.
+architectures, source commit, active patch-series digest (future backlog bytes
+are excluded), GN args, and report contents remain subject to the verifier rules
+described above.
