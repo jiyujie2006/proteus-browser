@@ -2404,22 +2404,15 @@ export function verifySourcePolicyCheckout({
     return value;
   };
 
-  const gitRootText = text(
-    ['rev-parse', '--show-toplevel'],
-    'Git repository root',
+  const insideWorkTree = text(
+    ['rev-parse', '--is-inside-work-tree'],
+    'Git worktree check',
   );
-  let gitRoot;
-  try {
-    if (!isAbsolute(gitRootText)) {
-      throw new TypeError('Git returned a non-absolute worktree root');
-    }
-    gitRoot = realpathSync(resolve(gitRootText));
-  } catch (error) {
-    throw new TypeError(
-      `source policy Git worktree root is invalid: ${error.message}`,
-    );
-  }
-  if (gitRoot !== root) {
+  const repositoryPrefix = text(
+    ['rev-parse', '--show-prefix'],
+    'Git repository prefix',
+  );
+  if (insideWorkTree !== 'true' || repositoryPrefix !== '') {
     throw new TypeError('source policy checkout is not the Git worktree root');
   }
   if (text(['rev-parse', 'HEAD'], 'Git HEAD') !== expectedSourceDigest) {

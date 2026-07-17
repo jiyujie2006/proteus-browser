@@ -34,6 +34,7 @@ import {
   runnerReceiptSigningInput,
   verifyM0EvidenceV2,
   verifyM0EvidenceV2Document,
+  verifySourcePolicyCheckout,
 } from '../../scripts/m0-evidence-v2.mjs';
 import {
   M0_EXTERNAL_EXECUTION_ISOLATION,
@@ -1956,6 +1957,22 @@ check('foreign Git origin cannot supply the trusted policy checkout', (fixture) 
     'https://github.com/example/evil.git',
   ]);
   expectFailure(fixture, /untrusted Git origin/);
+});
+
+check('source policy checkout path must be the Git worktree root', (fixture) => {
+  const child = join(fixture.repo, 'child');
+  mkdirSync(child);
+  let rejected = false;
+  try {
+    verifySourcePolicyCheckout({
+      expectedSourceDigest: fixture.sourceDigest,
+      gitPath: GIT_PATH,
+      repoRoot: realpathSync(child),
+    });
+  } catch (error) {
+    rejected = /not the Git worktree root/.test(error.message);
+  }
+  assert(rejected, 'a Git worktree child directory passed as its repository root');
 });
 
 check('missing raw Sigstore bundle fails closed', (fixture) => {
