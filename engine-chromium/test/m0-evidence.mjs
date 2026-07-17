@@ -38,6 +38,7 @@ import {
   evidenceSigningInput,
   inspectArtifactArchitectures,
   patchSeriesSha256,
+  physicalFileIdentityKeyFromBigIntStat,
   sha256File,
   verifyM0BuildEvidence,
   verifyM0BuildEvidenceDocument,
@@ -369,6 +370,21 @@ function writeMachOSlice(bytes, offset, cpuType) {
 
 console.log('\n  M0 cryptographic evidence verifier tests');
 console.log('  ' + '─'.repeat(58));
+
+{
+  const unsafeInteger = 2n ** 53n;
+  check(
+    Number(unsafeInteger) === Number(unsafeInteger + 1n)
+      && physicalFileIdentityKeyFromBigIntStat('first', {
+        dev: 1n,
+        ino: unsafeInteger,
+      }) !== physicalFileIdentityKeyFromBigIntStat('second', {
+        dev: 1n,
+        ino: unsafeInteger + 1n,
+      }),
+    'physical identity preserves adjacent filesystem IDs above Number precision',
+  );
+}
 
 withFixture(({ repo }) => {
   const audit = verifyM0BuildEvidence(repo);

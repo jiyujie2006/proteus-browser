@@ -1187,11 +1187,20 @@ export function resolveArtifactFile(repo, path) {
   return real;
 }
 
-function physicalFileIdentity(path) {
-  const stat = lstatSync(path);
-  return stat.ino === 0
+export function physicalFileIdentityKeyFromBigIntStat(path, stat) {
+  if (typeof stat?.dev !== 'bigint' || typeof stat?.ino !== 'bigint') {
+    throw new TypeError('physical file identity requires BigInt stat fields');
+  }
+  return stat.ino === 0n
     ? `path:${path}`
     : `inode:${stat.dev}:${stat.ino}`;
+}
+
+function physicalFileIdentity(path) {
+  return physicalFileIdentityKeyFromBigIntStat(
+    path,
+    lstatSync(path, { bigint: true }),
+  );
 }
 
 export function filesSharePhysicalIdentity(first, second) {
