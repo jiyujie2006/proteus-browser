@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -19,7 +20,9 @@ import {
 } from '../scripts/artifact-licenses.mjs';
 import { packageEngine } from '../scripts/package-engine.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'proteus-artifact-licenses-'));
+const root = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-artifact-licenses-'),
+));
 let passed = 0;
 
 function test(label, fn) {

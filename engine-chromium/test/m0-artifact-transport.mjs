@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   truncateSync,
   writeFileSync,
@@ -36,7 +37,9 @@ const PAYLOAD_RECORD_FILES = [
 ];
 
 function temporary() {
-  return mkdtempSync(join(tmpdir(), 'proteus-m0-transport-'));
+  return realpathSync(mkdtempSync(
+    join(realpathSync(tmpdir()), 'proteus-m0-transport-'),
+  ));
 }
 
 function payloadFixture(root, platform = 'linux-x64', slot = 'A') {

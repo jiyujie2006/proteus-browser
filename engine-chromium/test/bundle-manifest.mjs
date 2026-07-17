@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -18,7 +19,9 @@ import {
 } from '../scripts/bundle-manifest.mjs';
 import { parseRuntimeDependencies } from '../scripts/package-engine.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'proteus-bundle-manifest-'));
+const root = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-bundle-manifest-'),
+));
 let passed = 0;
 
 function test(label, fn) {

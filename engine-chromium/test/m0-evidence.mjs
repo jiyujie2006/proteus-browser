@@ -15,6 +15,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -72,7 +73,9 @@ function withFixture(run) {
 }
 
 function createFixture() {
-  const repo = mkdtempSync(join(tmpdir(), 'proteus-m0-evidence-'));
+  const repo = realpathSync(mkdtempSync(
+    join(realpathSync(tmpdir()), 'proteus-m0-evidence-'),
+  ));
   const artifacts = join(repo, 'engine-chromium', 'artifacts');
   const keys = join(repo, '.github', 'keys');
   mkdirSync(artifacts, { recursive: true });

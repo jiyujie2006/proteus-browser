@@ -1,4 +1,4 @@
-* text=auto
+* text=auto eol=lf
 
 # Exact dataset-byte hashes and signing vectors require stable checkouts.
 *.json text eol=lf

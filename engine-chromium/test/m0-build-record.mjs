@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,7 +22,9 @@ import {
   M0_PLATFORM_IDS,
 } from '../scripts/build-contract.mjs';
 
-const TEMP = mkdtempSync(join(tmpdir(), 'proteus-m0-build-record-'));
+const TEMP = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-m0-build-record-'),
+));
 const ARTIFACTS = join(TEMP, 'artifacts');
 const SOURCE = '1'.repeat(40);
 let passed = 0;

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -18,7 +19,9 @@ import {
 } from '../scripts/validate-artifact-staging.mjs';
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'proteus-m0-staging-'));
+  const root = realpathSync(mkdtempSync(
+    join(realpathSync(tmpdir()), 'proteus-m0-staging-'),
+  ));
   for (const platform of M0_PLATFORM_IDS) {
     for (const slot of ['A', 'B']) {
       const build = join(root, 'builds', platform, slot);

@@ -16,6 +16,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -115,7 +116,9 @@ function assert(condition, message) {
 }
 
 function createFixture() {
-  const repo = mkdtempSync(join(tmpdir(), 'proteus-m0-evidence-v2-'));
+  const repo = realpathSync(mkdtempSync(
+    join(realpathSync(tmpdir()), 'proteus-m0-evidence-v2-'),
+  ));
   const artifacts = join(repo, 'engine-chromium', 'artifacts');
   const build = join(repo, 'engine-chromium', 'build');
   const layer0 = join(
@@ -274,6 +277,7 @@ function git(repo, args) {
 
 function installPolicyCheckout(repo) {
   const copies = [
+    '.gitattributes',
     'package.json',
     'package-lock.json',
     'scripts/license-policy.mjs',
@@ -1903,6 +1907,15 @@ check('local policy substitution is rejected before contracts are trusted', (fix
   writeFileSync(
     argsPath,
     `${readFileSync(argsPath, 'utf8')}\n# attacker-local policy\n`,
+  );
+  expectFailure(fixture, /source policy checkout|differs from trusted commit/);
+});
+
+check('line-ending policy substitution is covered by source policy', (fixture) => {
+  const attributesPath = join(fixture.repo, '.gitattributes');
+  writeFileSync(
+    attributesPath,
+    `${readFileSync(attributesPath, 'utf8')}\n*.gn text eol=crlf\n`,
   );
   expectFailure(fixture, /source policy checkout|differs from trusted commit/);
 });

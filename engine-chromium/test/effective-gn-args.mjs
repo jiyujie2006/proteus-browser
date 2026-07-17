@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,7 +16,9 @@ import {
   validateEffectiveGnArgsText,
 } from '../scripts/effective-gn-args.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'proteus-effective-args-'));
+const root = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-effective-args-'),
+));
 let passed = 0;
 
 function test(label, fn) {

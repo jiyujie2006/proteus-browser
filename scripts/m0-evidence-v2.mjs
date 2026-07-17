@@ -2307,6 +2307,7 @@ function hashStableFile(path, label, maxBytes, expectedState = null) {
 }
 
 const SOURCE_POLICY_PATHS = Object.freeze([
+  '.gitattributes',
   '.github/workflows/m0-builder.yml',
   '.github/workflows/m0-aggregate.yml',
   '.github/workflows/m0-hard-gate.yml',

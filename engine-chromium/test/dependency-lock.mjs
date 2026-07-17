@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -42,7 +43,9 @@ import {
 import { sanitizedGitEnvironment } from '../scripts/git-env.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TEMP = mkdtempSync(join(tmpdir(), 'proteus-dependency-lock-test-'));
+const TEMP = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-dependency-lock-test-'),
+));
 const GIT = process.env.PROTEUS_GIT_BIN || 'git';
 const GIT_ENV = sanitizedGitEnvironment(process.env);
 const RUNTIME = detectDependencyRuntime({ platform: 'linux', architecture: 'x64' });

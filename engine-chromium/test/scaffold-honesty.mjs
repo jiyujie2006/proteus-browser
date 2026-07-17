@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -56,7 +57,9 @@ if (cliArgs.length > (m0Only ? 1 : 0)) {
   process.exit(64);
 }
 
-const TEMP = mkdtempSync(join(tmpdir(), 'proteus-scaffold-honesty-'));
+const TEMP = realpathSync(mkdtempSync(
+  join(realpathSync(tmpdir()), 'proteus-scaffold-honesty-'),
+));
 const CHROMIUM_PARENT = join(TEMP, 'chromium');
 mkdirSync(join(CHROMIUM_PARENT, 'src'), { recursive: true });
 
