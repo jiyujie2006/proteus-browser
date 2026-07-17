@@ -438,6 +438,23 @@ try {
     );
   });
 
+  check('nested Git dependency path must be the repository root', () => {
+    const fixture = nestedGitFixture();
+    const child = join(fixture.checkout, 'child');
+    mkdirSync(child);
+    assert.throws(
+      () => auditNestedGitDependencies(
+        fixture.clientRoot,
+        [{
+          ...fixture.dependency,
+          path: 'src/third_party/example/child',
+        }],
+        { git: GIT },
+      ),
+      /not a repository root/,
+    );
+  });
+
   check('nested Git audit rejects tracked worktree and index modifications', () => {
     const dirtyWorktree = nestedGitFixture();
     appendFileSync(join(dirtyWorktree.checkout, 'tracked.txt'), 'dirty\n');

@@ -648,13 +648,18 @@ export function auditNestedGitDependencies(
     const realCheckout = realpathSync(checkout);
     assertContained(root, realCheckout, dependency.path);
 
-    let topLevel;
+    let repositoryPrefix;
     let origin;
     let head;
     let actualTree;
     let expectedTree;
     try {
-      topLevel = gitOutput(git, checkout, ['rev-parse', '--show-toplevel'], gitEnvironment);
+      repositoryPrefix = gitOutput(
+        git,
+        checkout,
+        ['rev-parse', '--show-prefix'],
+        gitEnvironment,
+      );
       origin = gitOutput(git, checkout, ['remote', 'get-url', 'origin'], gitEnvironment);
       head = gitOutput(git, checkout, ['rev-parse', '--verify', 'HEAD'], gitEnvironment);
       actualTree = gitOutput(git, checkout, ['write-tree'], gitEnvironment);
@@ -670,7 +675,7 @@ export function auditNestedGitDependencies(
       );
     }
 
-    if (relative(realCheckout, realpathSync(topLevel)) !== '') {
+    if (repositoryPrefix !== '') {
       throw new TypeError(`nested Git dependency ${dependency.path} is not a repository root`);
     }
     if (origin !== dependency.url) {
