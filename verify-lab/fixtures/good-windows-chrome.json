@@ -1,0 +1,37 @@
+{
+  "_fixture": "good-windows-chrome",
+  "_expect": { "verdict": "blends-in", "maxInconsistencies": 0 },
+  "_note": "A coherent Windows 11 / Chrome desktop persona with a full runtime observation (traces/network/automation all clean). Should score green with zero inconsistencies.",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-000000000001",
+  "engine": { "family": "chromium", "brand": "Chrome", "majorVersion": 148, "fullVersion": "148.0.7623.115" },
+  "persona": { "os": { "name": "Windows", "version": "11", "arch": "x86_64" }, "device": { "class": "desktop", "model": null } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "platform": "Win32",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 16,
+    "deviceMemory": 8,
+    "vendor": "Google Inc."
+  },
+  "clientHints": {
+    "brands": [{ "brand": "Chromium", "version": "148" }, { "brand": "Google Chrome", "version": "148" }, { "brand": "Not/A)Brand", "version": "24" }],
+    "fullVersionList": [{ "brand": "Google Chrome", "version": "148.0.7623.115" }],
+    "platform": "Windows",
+    "platformVersion": "15.0.0",
+    "mobile": false
+  },
+  "screen": { "width": 2560, "height": 1440, "availWidth": 2560, "availHeight": 1400, "colorDepth": 24, "devicePixelRatio": 1.0 },
+  "gpu": {
+    "webglVendor": "Google Inc. (NVIDIA)",
+    "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "webgpuAdapter": { "vendor": "nvidia", "architecture": "ampere" }
+  },
+  "fonts": { "set": ["Arial", "Calibri", "Cambria", "Consolas", "Segoe UI", "Tahoma", "Times New Roman", "Verdana", "Courier New", "Georgia", "Trebuchet MS"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": true, "h2Matches": true, "dnsLeak": false, "webrtcLeak": false },
+  "automation": { "webdriver": false, "cdcArtifacts": 0, "runtimeEnableLeak": false, "untrustedInput": false, "headlessTells": 0 },
+  "context": { "proxyGeoCountry": "US" }
+}

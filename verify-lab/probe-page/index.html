@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Proteus Verification Lab — local detection suite</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --border: #30363d; --text: #e6edf3;
+    --muted: #8b949e; --good: #3fb950; --warn: #d29922; --bad: #f85149; --accent: #58a6ff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#ffffff; --panel:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#656d76; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+         background: var(--bg); color: var(--text); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .privacy { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+             padding: 12px 16px; margin-bottom: 24px; color: var(--muted); font-size: 13px; }
+  .privacy b { color: var(--text); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 10px 18px;
+           font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .aggline { display:flex; align-items:baseline; gap:12px; }
+  .agg { font-size: 40px; font-weight: 800; }
+  .verdict { font-weight: 700; }
+  .verdict.good { color: var(--good); } .verdict.warn { color: var(--warn); } .verdict.bad { color: var(--bad); }
+  .vec { display: grid; grid-template-columns: 130px 1fr 60px 120px; gap: 10px; align-items: center; padding: 4px 0; }
+  .track { height: 12px; background: rgba(128,128,128,.18); border-radius: 6px; overflow: hidden; }
+  .fill { height: 100%; background: var(--good); }
+  .fill.warn { background: var(--warn); } .fill.bad { background: var(--bad); }
+  .vname { color: var(--muted); }
+  .inc { border-left: 3px solid var(--bad); padding: 8px 12px; margin: 8px 0; background: rgba(248,81,73,.08); border-radius: 0 6px 6px 0; }
+  .inc .rid { color: var(--bad); font-weight: 600; font-size: 12px; }
+  .inc .fields { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .none { color: var(--good); font-weight: 600; }
+  pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; overflow:auto; font-size:12px; }
+  details { margin-top: 12px; } summary { cursor: pointer; color: var(--muted); }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Proteus Verification Lab</h1>
+  <p class="sub">Local, offline detection suite — the ruler. Threat vectors V1–V5.</p>
+
+  <div class="privacy">
+    <b>This runs entirely in your browser.</b> Your fingerprint is collected and scored locally.
+    Nothing is transmitted to any third party (Principle V). The network-layer probes (V4) require
+    the sidecar/controlled-origin harness and show as “not measured” here.
+  </div>
+
+  <div class="row">
+    <button id="run">Test this browser</button>
+    <button id="download" class="secondary hidden">Download result JSON</button>
+    <span id="status" class="sub" style="margin:0"></span>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="panel">
+      <div class="aggline">
+        <span class="agg" id="aggPct">—</span>
+        <span class="verdict" id="verdict"></span>
+      </div>
+      <div id="gated" class="sub" style="margin-top:4px"></div>
+    </div>
+
+    <div class="panel">
+      <div id="vectors"></div>
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0">Inconsistencies — the actionable output</h3>
+      <div id="inconsistencies"></div>
+    </div>
+
+    <details>
+      <summary>Raw collected fingerprint</summary>
+      <pre id="raw"></pre>
+    </details>
+  </div>
+</div>
+
+<script src="./collect.js"></script>
+<script type="module">
+  // The page can score in-browser (bundled scorer) OR POST the collection to the
+  // local runner. To keep the page a single self-contained artifact with no build
+  // step, we ship a browser copy of the scorer via a dynamic import of the shared
+  // ESM modules. Those modules are pure and dependency-free, so they load directly.
+  import { normalize } from '../src/normalize.mjs';
+  import { score } from '../src/score.mjs';
+  import { loadReferenceBrowser } from './reference-browser.js';
+
+  const $ = (id) => document.getElementById(id);
+  let lastResult = null;
+
+  function verdictClass(v) {
+    if (v === 'blends-in') return 'good';
+    if (v === 'borderline') return 'warn';
+    return 'bad';
+  }
+  function fillClass(s) { return s >= 0.9 ? '' : s >= 0.7 ? 'warn' : 'bad'; }
+
+  async function run() {
+    $('status').textContent = 'collecting…';
+    const raw = await window.ProteusCollect.collect();
+    const ref = await loadReferenceBrowser();
+    const obs = normalize(raw, {});
+    const scored = score(obs, ref);
+    lastResult = { raw, scored };
+
+    $('aggPct').textContent = Math.round(scored.aggregate * 100) + '%';
+    const vEl = $('verdict');
+    vEl.textContent = scored.verdict.replace(/-/g, ' ');
+    vEl.className = 'verdict ' + verdictClass(scored.verdict);
+    $('gated').textContent = scored.gated ? 'Aggregate capped: a V1 coherence rule failed (no green-washing).' : '';
+
+    const vectors = { V1:'coherence', V2:'rarity', V3:'traces', V4:'network', V5:'automation' };
+    $('vectors').innerHTML = Object.entries(vectors).map(([k, label]) => {
+      const info = scored.vectors[k];
+      if (info.score == null) {
+        return `<div class="vec"><span class="vname">${k} ${label}</span><div class="track"></div><span>n/a</span><span class="vname">not measured</span></div>`;
+      }
+      const pc = Math.round(info.score * 100);
+      return `<div class="vec"><span class="vname">${k} ${label}</span>
+        <div class="track"><div class="fill ${fillClass(info.score)}" style="width:${pc}%"></div></div>
+        <span>${pc}%</span><span class="vname">${info.passed} pass / ${info.failed} fail</span></div>`;
+    }).join('');
+
+    const incEl = $('inconsistencies');
+    if (scored.inconsistencies.length === 0) {
+      incEl.innerHTML = '<p class="none">None 🎉 — every measured coherence rule passed.</p>';
+    } else {
+      incEl.innerHTML = scored.inconsistencies.map((i) =>
+        `<div class="inc"><div class="rid">[${i.vector} · ${i.id}]</div>
+         <div>${i.reason}</div><div class="fields">fields: ${i.fields.join(', ')}</div></div>`).join('');
+    }
+    $('raw').textContent = JSON.stringify(raw, null, 2);
+    $('results').classList.remove('hidden');
+    $('download').classList.remove('hidden');
+    $('status').textContent = 'done';
+  }
+
+  $('run').addEventListener('click', run);
+  $('download').addEventListener('click', () => {
+    if (!lastResult) return;
+    const blob = new Blob([JSON.stringify(lastResult.raw, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'proteus-fingerprint.json';
+    a.click();
+  });
+</script>
+</body>
+</html>

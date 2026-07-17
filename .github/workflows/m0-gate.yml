@@ -1,0 +1,104 @@
+name: M0 local scaffold gate
+
+# The local scaffold gate. Everything here runs WITHOUT a Chromium
+# checkout — it validates the ruler (verification lab), the patch-series contract,
+# the declared-component license pre-check, schema, and dry-run tracking control
+# flow. A green run means the local scaffold is healthy; it does NOT satisfy the
+# hard M0 exit criteria in docs/06-roadmap.md.
+#
+# The actual Chromium build is a separate, infra-heavy workflow (not run on
+# hosted CI minutes) — see docs/tdd/05-build-and-tracking.md §2.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  m1a-signed-config:
+    name: M1A deterministic signed-config gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install locked Node test dependencies
+        run: npm ci
+
+      - name: Install repository-pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy
+
+      - name: Rust + Node M1A exit criteria
+        run: npm run m1a
+
+  m0-local-scaffold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Install locked Node test dependencies
+        run: npm ci
+
+      - name: Verification lab — self-test (fixtures + determinism)
+        working-directory: verify-lab
+        run: node bin/verify-lab.mjs selftest
+
+      - name: Verification lab — integration tests (schema + reference data)
+        working-directory: verify-lab
+        run: node test/run-tests.mjs
+
+      - name: Verification lab — M0 ruler exit-criteria gate
+        working-directory: verify-lab
+        run: node bin/verify-lab.mjs m0-gate
+
+      - name: Engine — patch-series contract
+        working-directory: engine-chromium
+        run: node scripts/check-series.mjs
+
+      - name: Engine — cross-platform fail-closed scaffold regressions
+        run: npm run engine:scaffold-honesty
+
+      - name: Engine — bounded entrypoint-evidence verifier regressions
+        run: npm run engine:evidence-tests
+
+      - name: Engine — declared-component manifest pre-check
+        working-directory: engine-chromium
+        run: node scripts/sbom.mjs
+
+      - name: Engine — provenance document shape
+        working-directory: engine-chromium
+        run: node scripts/provenance.mjs --demo > /dev/null
+
+      - name: Engine — tracking-bot pipeline (dry-run, up-to-date)
+        working-directory: engine-chromium
+        run: node tracking-bot/pipeline.mjs --dry-run
+
+      - name: Engine — tracking-bot pipeline (dry-run, simulated rebase)
+        working-directory: engine-chromium
+        run: PROTEUS_SIMULATE_NEW=151.0.7900.50 node tracking-bot/pipeline.mjs --dry-run
+
+      - name: Top-level local scaffold gate + milestone audit
+        run: node scripts/m0-exit-criteria.mjs

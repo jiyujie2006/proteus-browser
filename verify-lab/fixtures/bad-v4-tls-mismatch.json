@@ -1,0 +1,32 @@
+{
+  "_fixture": "bad-v4-tls-mismatch",
+  "_expect": { "verdict": "detectable", "mustFireRules": ["R-TLS-PARITY", "R-NO-WEBRTC-LEAK"], "minInconsistencies": 2 },
+  "_note": "Perfect JS-layer fingerprint, but the network layer betrays it: the origin saw a TLS fingerprint that isn't a real Chrome's (the classic MITM-proxy tell, ADR 0003), and WebRTC leaked the real IP. V1 clean, so 'detectable' not 'detectable-incoherent'. Demonstrates why the tunnel-not-MITM design and leak guards matter (tdd/03).",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-0000000000f4",
+  "engine": { "family": "chromium", "brand": "Chrome", "majorVersion": 148, "fullVersion": "148.0.7623.115" },
+  "persona": { "os": { "name": "Windows", "version": "11", "arch": "x86_64" }, "device": { "class": "desktop" } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "platform": "Win32",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "vendor": "Google Inc."
+  },
+  "clientHints": {
+    "brands": [{ "brand": "Google Chrome", "version": "148" }],
+    "fullVersionList": [{ "brand": "Google Chrome", "version": "148.0.7623.115" }],
+    "platform": "Windows",
+    "mobile": false
+  },
+  "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1040, "colorDepth": 24, "devicePixelRatio": 1.0 },
+  "gpu": { "webglVendor": "Google Inc. (Intel)", "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)" },
+  "fonts": { "set": ["Arial", "Calibri", "Cambria", "Consolas", "Segoe UI", "Tahoma", "Times New Roman", "Verdana", "Courier New"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": false, "h2Matches": true, "dnsLeak": false, "webrtcLeak": true },
+  "automation": { "webdriver": false, "cdcArtifacts": 0, "runtimeEnableLeak": false, "untrustedInput": false, "headlessTells": 0 },
+  "context": { "proxyGeoCountry": "US" }
+}

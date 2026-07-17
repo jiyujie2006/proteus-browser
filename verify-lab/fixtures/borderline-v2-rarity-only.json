@@ -1,0 +1,32 @@
+{
+  "_fixture": "borderline-v2-rarity-only",
+  "_expect": { "verdict": "borderline", "mustFireRules": ["R-VERSION-LIVE"], "mustNotFireRules": ["R-PLATFORM-GPU", "R-FONT-OS"], "minInconsistencies": 1, "maxInconsistencies": 1 },
+  "_note": "Fully coherent (no fatal tells) but the engine version sits just outside the live window — a pure V2 *rarity* signal, which is a matter of degree, not a deterministic tell. This must land on 'borderline' (not 'detectable'), proving soft failures pull the gradient without gating the verdict. Chrome 138 vs a live window of 144–152: plausible-looking but rarer than current, exactly the tail the rarity scorer warns about (tdd/02 §6).",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-0000000000f7",
+  "engine": { "family": "chromium", "brand": "Chrome", "majorVersion": 138, "fullVersion": "138.0.7204.150" },
+  "persona": { "os": { "name": "Windows", "version": "10", "arch": "x86_64" }, "device": { "class": "desktop" } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
+    "platform": "Win32",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "vendor": "Google Inc."
+  },
+  "clientHints": {
+    "brands": [{ "brand": "Google Chrome", "version": "138" }],
+    "fullVersionList": [{ "brand": "Google Chrome", "version": "138.0.7204.150" }],
+    "platform": "Windows",
+    "mobile": false
+  },
+  "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1040, "colorDepth": 24, "devicePixelRatio": 1.0 },
+  "gpu": { "webglVendor": "Google Inc. (Intel)", "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)" },
+  "fonts": { "set": ["Arial", "Calibri", "Cambria", "Consolas", "Segoe UI", "Tahoma", "Times New Roman", "Verdana", "Courier New"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": true, "h2Matches": true, "dnsLeak": false, "webrtcLeak": false },
+  "automation": { "webdriver": false, "cdcArtifacts": 0, "runtimeEnableLeak": false, "untrustedInput": false, "headlessTells": 0 },
+  "context": { "proxyGeoCountry": "US" }
+}

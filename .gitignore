@@ -1,0 +1,57 @@
+# Build artifacts
+/build/
+/out/
+/dist/
+/target/
+/fingerprint/target/
+node_modules/
+
+# verify-lab / tooling scratch
+*.tmp
+/verify-lab/**/out/
+proteus-fingerprint.json
+
+# Chromium / engine build trees (huge; never committed)
+/engine-chromium/src/
+/engine-chromium/out/
+/engine-chromium/artifacts/*
+!/engine-chromium/artifacts/README.md
+!/engine-chromium/artifacts/m0-build-evidence.json
+/engine-firefox/obj-*/
+depot_tools/
+*.o
+*.obj
+
+# Fingerprint dataset bundles (signed, distributed out-of-band)
+/fingerprint/datasets/*.bundle
+/fingerprint/datasets/*.sig
+
+# Local config / secrets — never commit
+*.local
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+.npmrc
+credentials.json
+service-account*.json
+secrets/
+
+# Encrypted profile data (never leaves the machine; never in VCS)
+/profiles/
+*.sqlcipher
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

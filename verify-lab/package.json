@@ -1,0 +1,27 @@
+{
+  "name": "@proteus/verify-lab",
+  "version": "0.0.1",
+  "description": "Proteus verification lab — the ruler. Local, offline detection suite that scores a browser fingerprint against the threat-model vectors V1–V5 and extracts the specific inconsistencies. Zero runtime dependencies (Node built-ins only).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "verify-lab": "./bin/verify-lab.mjs"
+  },
+  "scripts": {
+    "score": "node bin/verify-lab.mjs score",
+    "selftest": "node bin/verify-lab.mjs selftest",
+    "serve": "node bin/verify-lab.mjs serve",
+    "test": "node bin/verify-lab.mjs selftest && node test/run-tests.mjs",
+    "m0-gate": "node bin/verify-lab.mjs m0-gate"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "data/",
+    "probe-page/",
+    "fixtures/"
+  ]
+}

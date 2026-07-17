@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>proteus-headless-collector</title></head>
+<body>
+<!-- Minimal page for automated/headless collection: loads only the collector,
+     runs it on load, and exposes the promise as window.__collected. The full UI
+     lives in index.html; this exists so a CDP driver can evaluate one expression. -->
+<script src="./collect.js"></script>
+<script>
+  window.__collected = window.ProteusCollect.collect();
+</script>
+</body>
+</html>

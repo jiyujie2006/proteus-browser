@@ -1,0 +1,13 @@
+# Rationale: Make navigator.{userAgent,platform,languages,vendor,hardwareConcurrency,deviceMemory,appVersion,oscpu} return config values natively (docs/tdd/01 §4.1). Native getters => correct toString/descriptors/prototype for free (ADR 0005).
+# Surface: navigator.*
+# Threat-vectors: V1 (coherence), V3 (native, no trace)
+# Upstream-risk: MED. Touches core/frame/navigator*.cc, navigator_ua_data.cc, navigator_concurrent_hardware.cc, navigator_device_memory.cc, navigator_language.cc. Upstream occasionally reshuffles these.
+# Tests: v1-coherence/platform-os, v1-coherence/hw-pair, v3-traces/native-tostring, v3-traces/cross-context
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

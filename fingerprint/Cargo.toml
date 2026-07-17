@@ -1,0 +1,31 @@
+[package]
+name = "proteus-fingerprint"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "Apache-2.0"
+description = "Proteus M1A deterministic fingerprint profile generator and signed config verifier"
+publish = false
+
+[lib]
+name = "proteus_fingerprint"
+path = "src/lib.rs"
+
+[[bin]]
+name = "proteus-fingerprint"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "=0.22.1"
+ed25519-dalek = "=3.0.0"
+hmac = "=0.12.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+sha2 = "=0.10.9"
+thiserror = "=2.0.18"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"

@@ -1,0 +1,47 @@
+# Reproducible-build GN args for the Proteus Chromium engine (docs/tdd/05 §5).
+# Goal: bit-for-bit reproducible output so an independent rebuilder gets the same
+# artifact hash (Principle VI). These args are the reproducibility + release
+# baseline; a build host imports this file via `gn gen --args="import(\"//args.gn\")"`
+# or copies it into out/Proteus/args.gn.
+
+# --- Release / optimization --------------------------------------------------
+is_debug = false
+is_official_build = true
+symbol_level = 1
+blink_symbol_level = 0
+
+# --- Reproducibility ---------------------------------------------------------
+# Strip build paths so the artifact doesn't embed absolute paths (a key source of
+# non-determinism). The path-map makes compilation independent of the checkout dir.
+strip_absolute_paths_from_debug_symbols = true
+
+# Do not embed build timestamps / host info.
+# (Chromium honors these; keep them explicit so a reviewer sees the intent.)
+enable_stripping = true
+
+# Deterministic toolchain: pin to the bundled toolchain, no host-derived paths.
+use_thin_lto = true
+thin_lto_enable_optimizations = true
+
+# --- Privacy / de-Google (belt-and-suspenders on top of layer0) --------------
+google_api_key = ""
+google_default_client_id = ""
+google_default_client_secret = ""
+use_official_google_api_keys = false
+enable_reporting = false
+enable_hangout_services_extension = false
+safe_browsing_mode = 0
+enable_mdns = false
+
+# --- Sandbox: NEVER weaken (Principle IX) ------------------------------------
+# We do not set any flag that disables the sandbox. This comment is load-bearing:
+# a PR that adds `disable_sandbox`-style args must be rejected in review.
+
+# --- Build performance (does not affect output determinism) ------------------
+# cc_wrapper is provided by the build host env (sccache/reclient), not hard-coded
+# here, so the reproducibility hash is independent of the cache backend.
+# Example on the farm: cc_wrapper = "sccache"
+
+# --- Target ------------------------------------------------------------------
+target_cpu = "x64"
+# Cross builds set target_os per platform on the farm (win/mac/linux).

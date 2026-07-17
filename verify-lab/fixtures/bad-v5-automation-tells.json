@@ -1,0 +1,32 @@
+{
+  "_fixture": "bad-v5-automation-tells",
+  "_expect": { "verdict": "detectable", "mustFireRules": ["R-NO-WEBDRIVER", "R-NO-RUNTIME-LEAK", "R-NO-CDP-ARTIFACTS"], "minInconsistencies": 3 },
+  "_note": "A naively-automated session: navigator.webdriver true, ChromeDriver cdc_ artifacts present, the Runtime.enable leak observable, synthetic (isTrusted=false) input, and headless tells. Everything the anti-automation work (tdd/04) exists to remove. V1 clean → 'detectable'.",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-0000000000f5",
+  "engine": { "family": "chromium", "brand": "Chrome", "majorVersion": 148, "fullVersion": "148.0.7623.115" },
+  "persona": { "os": { "name": "Linux", "version": "6", "arch": "x86_64" }, "device": { "class": "desktop" } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "platform": "Linux x86_64",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "vendor": "Google Inc."
+  },
+  "clientHints": {
+    "brands": [{ "brand": "Google Chrome", "version": "148" }],
+    "fullVersionList": [{ "brand": "Google Chrome", "version": "148.0.7623.115" }],
+    "platform": "Linux",
+    "mobile": false
+  },
+  "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1080, "colorDepth": 24, "devicePixelRatio": 1.0 },
+  "gpu": { "webglVendor": "Google Inc. (Intel)", "webglRenderer": "ANGLE (Intel, Mesa Intel(R) UHD Graphics (CML GT2), OpenGL 4.6)" },
+  "fonts": { "set": ["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono", "Liberation Sans", "Liberation Serif", "Ubuntu"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": true, "h2Matches": true, "dnsLeak": false, "webrtcLeak": false },
+  "automation": { "webdriver": true, "cdcArtifacts": 3, "runtimeEnableLeak": true, "untrustedInput": true, "headlessTells": 2 },
+  "context": { "proxyGeoCountry": "US" }
+}

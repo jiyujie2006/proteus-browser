@@ -1,0 +1,168 @@
+# TDD 04 — Anti-Automation & Stealth Automation
+
+**Status:** Design · **Serves principles:** III, IV · **Threat vectors:** V5
+(automation/CDP traces), supports V6 (behavior)
+
+Many users will automate Proteus (scraping-for-QA, testing, RPA). Automation is
+also one of the most detectable things a browser can do. This TDD covers both
+sides: removing automation *traces*, and providing a *stealth automation* surface
+that existing tools (Playwright/Puppeteer/Selenium) can drive without leaking.
+
+## 1. Goals & non-goals
+
+**Goals**
+- No automation tells when driven: no `navigator.webdriver`, no automation
+  infobar/switches, no driver artifacts, no `Runtime.enable` leak.
+- A **stealth CDP endpoint** so existing automation frameworks work with minimal
+  changes.
+- Humanized input primitives (mouse/keyboard) with genuine `isTrusted` events.
+- Honest guidance on the parts that are the user's responsibility (V6 behavior,
+  operational cadence).
+
+**Non-goals**
+- Making automation behaviorally indistinguishable from a human *for* the user —
+  we provide primitives and genuine events; realistic operation is the user's.
+- Solving V7 reputation.
+
+## 2. Removing automation traces (native, Principle III)
+
+Because we control the source, we remove traces at the root rather than patching
+them over in JS (which is itself detectable):
+
+- **`navigator.webdriver`:** native return of the persona-appropriate value
+  (false), via the same config-driven surface path as other navigator fields —
+  no JS `delete`/override that leaves a descriptor tell.
+- **Automation switches/infobar:** the "controlled by automated test software"
+  banner and `--enable-automation`-triggered behaviors are removed in the patch
+  set (layer2), so enabling remote debugging doesn't flip visible/observable
+  automation state.
+- **Driver artifacts:** no ChromeDriver `cdc_...`/`$cdc_` injected globals (we
+  don't use ChromeDriver's injection model; see §4). No Selenium/Puppeteer
+  residue in the JS environment.
+- **Headless tells:** we run headful by default; where headless is used, we
+  ensure the surfaces that classically differ (certain `chrome.*` objects,
+  permissions/notification interaction, plugin/mimeType presence) match a real
+  headful browser of the persona.
+
+Each of these is a verification-lab probe (bot.sannysoft and CreepJS cover many;
+we add our own).
+
+## 3. The `Runtime.enable` leak — and how we avoid it
+
+**The problem:** the standard way automation gets a page's execution context is to
+enable the CDP `Runtime` domain, which causes the browser to emit
+`Runtime.executionContextCreated` events and related behavior that a page can
+detect (advanced anti-bots probe for the side effects of `Runtime.enable`). Naive
+Puppeteer/Playwright usage trips this.
+
+**Our approach:**
+- The stealth endpoint obtains execution contexts and evaluates in an **isolated
+  world** without relying on page-observable `Runtime.enable` side effects — i.e.,
+  we use the internal mechanisms that don't emit the detectable events, or gate
+  the domain so its observable footprint matches a non-automated browser.
+- Script evaluation for automation happens in an isolated world separate from the
+  page's main world, so page code can't see automation-injected globals or timing.
+- This is done in the engine (layer2 patches) rather than as an after-the-fact
+  client shim, so it's robust across framework versions (contrast with
+  client-side patch projects that chase this per release).
+
+**Result:** a page cannot distinguish "being automated via Proteus's stealth
+endpoint" from "a user clicking," on the CDP-leak axis. Verified by a dedicated
+probe modeled on the known `Runtime.enable` detection techniques.
+
+## 4. Stealth CDP endpoint & framework compatibility
+
+**Design:** the engine exposes a CDP-compatible endpoint that:
+- Speaks enough of the CDP protocol for Playwright/Puppeteer/Selenium (via CDP)
+  to attach and drive.
+- Routes context access through the leak-free path (§3).
+- Exposes **no** automation identity to pages (§2).
+- Is bound locally and authenticated (only the Manager/RPA or an authorized local
+  client can attach), so it isn't itself an attack surface.
+
+**Compatibility layers:**
+- **Playwright / Puppeteer:** connect over the stealth endpoint; we provide a thin
+  adapter/launcher so `connect`-style usage "just works" and inherits the
+  profile's fingerprint + sidecar automatically.
+- **Selenium:** supported via a modified driver that talks to the stealth endpoint
+  rather than injecting ChromeDriver artifacts.
+- **Goal:** minimal migration cost — existing scripts run, but now stealthy and
+  fingerprint-coherent.
+
+**Why an endpoint and not "our own API only":** meeting users where they are
+(existing Playwright/Puppeteer investments) is a major adoption lever; the value
+we add is that the *same* scripts become non-leaky and identity-coherent.
+
+## 5. Humanized input primitives (supports V6)
+
+Genuine events, humanized shape:
+- Because input is generated by the engine's real input pipeline, events are
+  natively `isTrusted === true` (a synthetic JS `dispatchEvent` is `isTrusted ===
+  false` — a instant tell that JS-injection tools struggle with).
+- **Mouse:** path generation with human-like velocity profiles, curvature, and
+  micro-jitter (e.g., Fitts's-law-plausible timing between targets), not
+  teleporting cursors or straight-line moves.
+- **Keyboard:** dwell/flight timing distributions per persona rather than
+  constant-interval typing.
+- **Scroll:** momentum/settle patterns rather than instant jumps.
+- These are *primitives*, tunable per persona; the RPA runtime and the automation
+  adapters expose them.
+
+**Honesty (Principle IV):** we are explicit that primitives ≠ guaranteed
+human-passing behavior. A vendor with a behavioral-biometrics model may still
+score automated operation as non-human if the *operation* (what's clicked, how
+fast, how repetitively) is robotic. That's the user's domain; we give the best
+building blocks and say so.
+
+## 6. No-code RPA runtime (with tdd/07)
+
+- A visual flow builder (nodes: navigate, wait, click, type, extract, conditional,
+  loop, solve-challenge-handoff, etc.) compiling to an executable flow that drives
+  the stealth endpoint with humanized primitives.
+- **Plugin nodes:** community/extension node packages (e.g., a captcha-service
+  node, a data-sink node) via the plugin SDK (tdd/07).
+- **Parity with code:** anything the RPA can do is available via the code API, and
+  vice-versa, so users can graduate from no-code to code without a wall.
+- Runs each flow bound to a specific profile (its fingerprint + sidecar), so
+  automated sessions are as coherent as manual ones.
+
+## 7. Interaction summary
+
+| With | Contract |
+|---|---|
+| Engine (tdd/01) | Anti-trace + stealth endpoint are layer2 patches; input via real pipeline |
+| Fingerprint engine (tdd/02) | Automated sessions use the same coherent config as manual |
+| Network (tdd/03) | Automation egresses through the profile's sidecar like any session |
+| Manager/RPA (tdd/07) | Manager authorizes endpoint attach; RPA runtime drives it |
+| Verification lab (tdd/06) | Probes for webdriver, infobar, cdc_, Runtime.enable leak, isTrusted |
+
+## 8. Testing strategy
+
+- **Trace probes:** assert absence of `navigator.webdriver`, automation
+  switches/infobar, `cdc_`/driver globals, headless tells — across contexts.
+- **Runtime.enable leak probe:** run the known detection technique against a
+  driven session; assert non-detection.
+- **isTrusted:** assert engine-generated input events report `isTrusted === true`.
+- **Framework smoke tests:** Playwright/Puppeteer/Selenium each attach, navigate,
+  interact, and pass the trace probes while driving.
+- **Regression:** all in the public dashboard.
+
+## 9. Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| New CDP-based detection technique appears | Native handling in-engine (robust vs. per-release client patches); add probe |
+| Framework version drift breaks adapter | Thin adapters; smoke tests in CI; endpoint speaks stable CDP subset |
+| Users assume "humanized input" = undetectable | Explicit Principle-IV guidance in docs/UI; behavior is user's domain |
+| Stealth endpoint as attack surface | Local-bind + auth; only authorized local clients attach |
+| Headless use reintroduces tells | Prefer headful; if headless, match real-headful surfaces + probe |
+
+## 10. Open questions
+
+- Exact CDP subset to implement for full Playwright vs. Puppeteer coverage in M3
+  vs. later.
+- Whether to ship a Selenium driver in M3 or after Playwright/Puppeteer.
+- How much behavioral modeling to bundle (mouse/keybois models) vs. leave to
+  plugins — start with solid primitives, allow plugin models.
+- Isolated-world evaluation edge cases with pages that themselves use isolated
+  worlds / CSP — enumerate in prototyping.

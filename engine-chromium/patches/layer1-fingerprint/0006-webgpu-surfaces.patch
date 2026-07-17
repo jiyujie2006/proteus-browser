@@ -1,0 +1,13 @@
+# Rationale: WebGPU GPUAdapter info/limits/features consistent with the WebGL GPU family (no RTX-in-WebGL/Intel-in-WebGPU); report unavailable coherently where the persona wouldn't have it (docs/tdd/01 §4.6). Emerging surface many tools miss.
+# Surface: WebGPU
+# Threat-vectors: V1 (webgl-webgpu agreement), V2
+# Upstream-risk: MED-HIGH. modules/webgpu/ is newer and changes shape upstream.
+# Tests: v1-coherence/webgl-webgpu
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

@@ -1,0 +1,13 @@
+# Rationale: Route config.locale.timezone through ICU + V8 Date/Intl so Intl timezone, Date offset, and Accept-Language all agree AND match the proxy IP geolocation (docs/tdd/01 §4.9). Ties to the network layer (tdd/03).
+# Surface: Timezone / locale
+# Threat-vectors: V1 (tz-geo, lang)
+# Upstream-risk: MED. ICU tz plumbing + V8 Date/Intl bridge + Accept-Language header path.
+# Tests: v1-coherence/tz-geo, v1-coherence/lang
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

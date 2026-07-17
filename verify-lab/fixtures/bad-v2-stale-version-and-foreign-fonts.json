@@ -1,0 +1,32 @@
+{
+  "_fixture": "bad-v2-stale-version-and-foreign-fonts",
+  "_expect": { "verdict": "detectable-incoherent", "mustFireRules": ["R-VERSION-LIVE", "R-FONT-OS"], "minInconsistencies": 2 },
+  "_note": "Two of the subtler tells. The engine claims Chrome 99 — long outside the live window (V2 rarity: nobody real runs it anymore). And a Windows persona whose font set leaks a macOS-only font (SF Pro) while missing some core Windows fonts (V1). Shows the lab catches both rarity and font-OS incoherence.",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-0000000000f6",
+  "engine": { "family": "chromium", "brand": "Chrome", "majorVersion": 99, "fullVersion": "99.0.4844.51" },
+  "persona": { "os": { "name": "Windows", "version": "10", "arch": "x86_64" }, "device": { "class": "desktop" } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.0.0 Safari/537.36",
+    "platform": "Win32",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 8,
+    "deviceMemory": 8,
+    "vendor": "Google Inc."
+  },
+  "clientHints": {
+    "brands": [{ "brand": "Google Chrome", "version": "99" }],
+    "fullVersionList": [{ "brand": "Google Chrome", "version": "99.0.4844.51" }],
+    "platform": "Windows",
+    "mobile": false
+  },
+  "screen": { "width": 1920, "height": 1080, "availWidth": 1920, "availHeight": 1040, "colorDepth": 24, "devicePixelRatio": 1.0 },
+  "gpu": { "webglVendor": "Google Inc. (Intel)", "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)" },
+  "fonts": { "set": ["Arial", "Segoe UI", "Tahoma", "SF Pro", "Helvetica Neue"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/New_York", "acceptLanguage": "en-US,en;q=0.9", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": true, "h2Matches": true, "dnsLeak": false, "webrtcLeak": false },
+  "automation": { "webdriver": false, "cdcArtifacts": 0, "runtimeEnableLeak": false, "untrustedInput": false, "headlessTells": 0 },
+  "context": { "proxyGeoCountry": "US" }
+}

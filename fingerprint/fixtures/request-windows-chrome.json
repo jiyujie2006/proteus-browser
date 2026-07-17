@@ -1,0 +1,19 @@
+{
+  "seed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "engine": {
+    "brand": "Chrome",
+    "majorVersion": 150
+  },
+  "persona": {
+    "os": {
+      "name": "Windows",
+      "version": "11",
+      "arch": "x86_64"
+    },
+    "device": {
+      "class": "desktop",
+      "model": null
+    },
+    "region": "US"
+  }
+}

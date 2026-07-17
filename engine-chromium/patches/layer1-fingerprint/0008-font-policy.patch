@@ -1,0 +1,13 @@
+# Rationale: Present the persona OS font set (bundled per-OS packages) and restrict matching (local(), document.fonts, measurement) so only those resolve regardless of host fonts; metrics reflect presented fonts (docs/tdd/01 §4.8). Hardest on Linux hosts.
+# Surface: Fonts (enumeration + metrics)
+# Threat-vectors: V1 (font-os)
+# Upstream-risk: MED. platform/fonts/font_cache*.cc, FontManager, text-metrics paths; plus bundled-font packaging + licensing (see ../../NOTICE).
+# Tests: v1-coherence/font-os
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

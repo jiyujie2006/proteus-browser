@@ -1,0 +1,200 @@
+# 01 — Threat Model
+
+This document defines who we are up against, how they catch anti-detect
+browsers, which vectors matter most, and — crucially — **what we cannot do**.
+Every design decision in Proteus is justified against this model. If a proposed
+feature does not move a needle defined here, it is out of scope.
+
+## 1. Who is the adversary?
+
+Not a single actor. A layered stack of detection, from strongest to most common:
+
+- **Dedicated anti-bot / fraud vendors**: Cloudflare Bot Management,
+  DataDome, Akamai Bot Manager, HUMAN (formerly PerimeterX), Kasada, Imperva
+  (Incapsula), F5 Shape.
+- **Commercial fingerprinting-as-identity**: FingerprintJS Pro and similar,
+  whose business is producing a *stable* visitor ID across sessions and catching
+  inconsistency/spoofing.
+- **First-party platform risk engines**: Google, Meta, Amazon, TikTok,
+  financial institutions — often the most sophisticated because they also have
+  deep account-history and behavioral signals we cannot touch.
+- **Open detection tooling** (our public sparring partners): CreepJS,
+  fingerprint.js open source, bot.sannysoft.com, pixelscan.net, browserleaks,
+  iphey, amiunique, CoverYourTracks. We treat passing these as *necessary but
+  not sufficient*.
+
+The adversary generally does **not** need to prove you are a bot. They compute a
+risk score and act on it (challenge, throttle, shadow-limit, ban). Our job is to
+keep the score low, which means eliminating *signals*, not winning a binary.
+
+## 2. Detection vectors, ranked by kill power
+
+The ranking is the important part — it dictates where we spend effort.
+
+### V1 — Incoherence (the #1 killer)
+
+Internal contradiction within the presented identity. Examples:
+
+- `navigator.platform = "Win32"` but WebGL `UNMASKED_RENDERER` is `Apple M2`.
+- User-Agent says Chrome 126 on macOS, but `Sec-CH-UA-Platform` says `Windows`,
+  or the full-version-list disagrees.
+- Timezone `America/New_York` but the proxy IP geolocates to Frankfurt.
+- Claimed macOS but the font-probe enumerates `Segoe UI` (a Windows font) and
+  not `SF Pro`.
+- `navigator.languages = ["en-US"]` but `Accept-Language` header says `ru-RU`.
+- Screen resolution / devicePixelRatio combination that no real device ships.
+- `hardwareConcurrency = 4` but a `deviceMemory = 0.25` — implausible pairing.
+
+**Why it's #1:** it requires no exotic probe. A site just cross-checks fields it
+already collects. It is cheap, reliable, and false-positive-resistant. **This is
+where cheap tools die**, and defeating it is Proteus's central design goal.
+
+### V2 — Uniqueness / rarity
+
+A fingerprint so rare it is effectively an ID — even if internally coherent. A
+"perfect" but one-in-ten-million configuration is itself anomalous, and it also
+makes you *trackable*. Randomly-combining tools cause this constantly (e.g., a
+plausible but never-actually-shipped GPU+OS+resolution triple).
+
+**Why it's #2:** anti-fingerprinting and pro-fingerprinting both exploit rarity —
+one to hide you, one to ID you. Most tools optimize the wrong direction. See our
+rarity-scoring response in [tdd/02](tdd/02-fingerprint-engine.md).
+
+### V3 — Spoofing traces
+
+Evidence that values were *overridden* rather than *native*:
+
+- `navigator.hardwareConcurrency.toString` or a patched getter whose
+  `Function.prototype.toString` does not return `function () { [native code] }`.
+- A property that should be an accessor (getter) present as a data property, or
+  wrong `enumerable`/`configurable` descriptors.
+- Prototype-chain anomalies; the override present on the instance but not the
+  prototype, or vice-versa.
+- Values that differ between the main frame and a same-origin `iframe`, a
+  `Worker`, or a `ServiceWorker` — because the JS patch was only installed in one
+  context.
+- `Object.getOwnPropertyDescriptor`, `Reflect.ownKeys`, `toString` traps, and
+  Proxy-detection catching the shim.
+
+**Why it matters:** these are *deterministic* tells — no probabilities. A single
+one can flip a verdict. Native production (V3's antidote) is
+[Principle III](02-design-principles.md).
+
+### V4 — Cross-layer mismatch
+
+The identity told by JavaScript disagrees with a lower network layer:
+
+- **TLS**: JA3 / JA4 / JARM fingerprints of the ClientHello (cipher suites,
+  extensions, curves, order) say "Chrome" while JS says "Safari," or say
+  "some Go HTTP client" while JS says "Chrome."
+- **HTTP/2**: the Akamai-style H2 fingerprint (SETTINGS frame values, window
+  update, header priority, pseudo-header order) reveals a different client than
+  claimed.
+- **QUIC / HTTP/3**: presence/absence and transport params inconsistent with the
+  claimed browser/version.
+- **TCP/IP**: p0f-style passive OS inference from TTL, window size, MSS.
+
+**Why it matters:** flawless JS is undone by one layer below it. Almost no
+high-volume tool addresses this. It is Proteus's biggest differentiation —
+[tdd/03](tdd/03-network-layer.md).
+
+### V5 — Automation / CDP traces
+
+Signs the browser is driven by automation:
+
+- `navigator.webdriver === true`, the "Chrome is being controlled by automated
+  test software" infobar, `--enable-automation` switches.
+- ChromeDriver's `cdc_...` injected variables; Selenium/Puppeteer/Playwright
+  artifacts.
+- The **`Runtime.enable` CDP leak**: enabling the runtime domain to get
+  execution-context info emits behavior a page can observe. Modern anti-bots
+  probe for it.
+- Headless tells: missing `chrome.runtime`, wrong `Notification.permission`
+  interactions, absent plugins/mimeTypes in ways real Chrome isn't.
+
+**Why it matters:** if you automate (and many users will), these are
+deterministic. Addressed in [tdd/04](tdd/04-anti-automation.md).
+
+### V6 — Behavioral
+
+Human-ness of interaction: mouse dynamics (velocity, curvature, jitter,
+Fitts's-law timing), keystroke dynamics (dwell/flight times), scroll patterns,
+page-dwell, presence of any interaction at all, event `isTrusted`. Advanced
+vendors build behavioral biometric models.
+
+**Why it matters:** rising fast; the frontier of the arms race. We provide
+humanized input primitives and honest guidance, but this is substantially the
+*user's* operational responsibility. Real, `isTrusted`-genuine events (from our
+engine, not synthetic JS) are a baseline advantage.
+
+### V7 — Reputation & account graph
+
+Not a browser signal at all: IP/proxy reputation (datacenter vs residential,
+ASN, blocklists, past abuse), and the platform's own account-history graph
+(device-account linkage over time, payment instruments, behavioral history,
+social graph). This is frequently the *decisive* layer for first-party platforms.
+
+**Why it matters:** it is largely **outside** what any browser can fix. We make
+it easy for the user to do the controllable parts right (proxy quality checks,
+per-profile network isolation, warm-up), and we are explicit that the rest is not
+ours to solve.
+
+## 3. The vector→response map
+
+| Vector | Proteus's primary response | Where |
+|---|---|---|
+| V1 Incoherence | Consistency-constraint engine; rules encode known heuristics; persona model | [tdd/02](tdd/02-fingerprint-engine.md) |
+| V2 Rarity | Real-distribution sampling + rarity scoring, reject over-unique | [tdd/02](tdd/02-fingerprint-engine.md) |
+| V3 Spoofing traces | Native C++ engine production, no JS injection | [tdd/01](tdd/01-chromium-engine.md) |
+| V4 Cross-layer | Same-family only + tunnel-not-MITM + optional uTLS pinning | [tdd/03](tdd/03-network-layer.md) |
+| V5 Automation | Native anti-CDP, stealth CDP endpoint, no `Runtime.enable` leak | [tdd/04](tdd/04-anti-automation.md) |
+| V6 Behavior | Humanized input primitives; genuine `isTrusted`; guidance | [tdd/04](tdd/04-anti-automation.md), [05](05-product-ux.md) |
+| V7 Reputation | Proxy quality tooling, isolation, warm-up; honest boundary | [05](05-product-ux.md) |
+
+## 4. What we canNOT do — the honest boundary
+
+This section is load-bearing. Overpromising here is how anti-detect tools lose
+user trust and how users get their accounts banned believing they were safe.
+
+- **We cannot make you undetectable.** We reduce browser- and network-layer
+  signals to state-of-the-art-low. We do not control V6 and V7, and a determined
+  first-party platform combining behavior + account graph + reputation can flag
+  an account regardless of a perfect fingerprint.
+- **We cannot fix a bad proxy.** TCP/IP-stack fingerprinting (V4/TCP) reflects
+  the *proxy exit host's* OS, and IP reputation (V7) reflects the proxy's
+  history. A datacenter proxy with a trashed reputation defeats a perfect
+  browser fingerprint. We detect and warn; we cannot launder a bad IP.
+- **We cannot make automation behave like a human for you.** We give genuine
+  events and humanized primitives; realistic *operational* behavior (timing,
+  restraint, not hammering an API) is yours.
+- **We cannot defeat the account graph.** If a platform has already linked your
+  identities through payment, phone, prior behavior, or a past mistake, a fresh
+  fingerprint does not unlink them.
+- **We cannot guarantee any specific site works.** The arms race is continuous.
+  We commit to *measuring* our effectiveness publicly and fixing regressions
+  fast, not to a false guarantee.
+- **A profile is only as isolated as the user keeps it.** Reusing a proxy across
+  profiles, leaking through a misconfiguration, or logging into a linking
+  service can collapse separation we worked to create.
+
+The product surfaces these truths in-context (e.g., a proxy-quality warning, a
+timezone/IP mismatch alert), rather than burying them.
+
+## 5. Assumptions & non-goals
+
+- **Assumption:** the user supplies their own proxies/exit IPs. Proteus is not a
+  proxy provider (though the proxy library can integrate providers via plugins).
+- **Assumption:** the host OS is not itself compromised or surveilling the user;
+  we protect data at rest but are not an anti-forensics tool.
+- **Non-goal:** defeating lawful interception, KYC/AML, or sanctions controls
+  (see [ACCEPTABLE_USE.md](../ACCEPTABLE_USE.md)).
+- **Non-goal:** anonymity network (Tor-style). Proteus is about *coherent,
+  controllable* identities, not anonymity; the two have different threat models.
+
+## 6. How this model is kept honest
+
+The threat model is not a one-time document. Each vector maps to concrete probes
+in the [verification lab](tdd/06-verification-lab.md); the public regression
+dashboard is the running scorecard against V1–V5. When a new detection technique
+appears in the wild, it enters here first (as a vector or a refinement), then
+becomes a probe, then a fix — in that order.

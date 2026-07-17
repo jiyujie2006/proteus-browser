@@ -1,0 +1,35 @@
+{
+  "name": "proteus",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Proteus pre-alpha: verification ruler, honest Chromium scaffold, and M1A deterministic signed-config core.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "m0": "npm run m0:local",
+    "m0:local": "node scripts/m0-exit-criteria.mjs",
+    "m0:milestone": "node scripts/m0-exit-criteria.mjs --milestone",
+    "m1a": "node scripts/m1a-exit-criteria.mjs",
+    "fingerprint:fmt": "cargo fmt --manifest-path fingerprint/Cargo.toml -- --check",
+    "fingerprint:test": "cargo test --manifest-path fingerprint/Cargo.toml --locked",
+    "fingerprint:clippy": "cargo clippy --manifest-path fingerprint/Cargo.toml --locked --all-targets -- -D warnings",
+    "verify:selftest": "node verify-lab/bin/verify-lab.mjs selftest",
+    "verify:tests": "node verify-lab/test/run-tests.mjs",
+    "verify:serve": "node verify-lab/bin/verify-lab.mjs serve",
+    "verify:live": "node verify-lab/tools/drive-chrome.mjs",
+    "engine:check-series": "node engine-chromium/scripts/check-series.mjs",
+    "engine:scaffold-honesty": "node engine-chromium/test/scaffold-honesty.mjs",
+    "engine:evidence-tests": "node engine-chromium/test/m0-evidence.mjs",
+    "engine:sbom": "node engine-chromium/scripts/sbom.mjs",
+    "engine:provenance": "node engine-chromium/scripts/provenance.mjs --demo",
+    "engine:track": "node engine-chromium/tracking-bot/pipeline.mjs --dry-run",
+    "test": "npm run verify:selftest && npm run verify:tests && npm run engine:check-series && npm run engine:scaffold-honesty && npm run engine:evidence-tests && npm run engine:sbom && npm run m1a && npm run m0:local"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

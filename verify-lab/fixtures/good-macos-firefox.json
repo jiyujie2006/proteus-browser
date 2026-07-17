@@ -1,0 +1,31 @@
+{
+  "_fixture": "good-macos-safari-family-firefox",
+  "_expect": { "verdict": "blends-in", "maxInconsistencies": 0 },
+  "_note": "A coherent macOS / Firefox laptop persona. Firefox exposes no Client Hints and vendor is empty string — the rules must handle that without false positives. Apple GPU under macOS is valid.",
+
+  "schemaVersion": "1.0.0",
+  "profileId": "00000000-0000-0000-0000-000000000002",
+  "engine": { "family": "firefox", "brand": "Firefox", "majorVersion": 150, "fullVersion": "150.0" },
+  "persona": { "os": { "name": "macOS", "version": "14", "arch": "arm64" }, "device": { "class": "laptop", "model": "MacBook Pro" } },
+  "navigator": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0",
+    "platform": "MacIntel",
+    "languages": ["en-US", "en"],
+    "hardwareConcurrency": 10,
+    "deviceMemory": 8,
+    "vendor": ""
+  },
+  "clientHints": null,
+  "screen": { "width": 1512, "height": 982, "availWidth": 1512, "availHeight": 944, "colorDepth": 30, "devicePixelRatio": 2.0 },
+  "gpu": {
+    "webglVendor": "Apple",
+    "webglRenderer": "Apple M3",
+    "webgpuAdapter": { "vendor": "apple", "architecture": "apple-9" }
+  },
+  "fonts": { "set": ["Helvetica", "Helvetica Neue", "Menlo", "SF Pro", "Times", "Geneva", "Monaco", "Lucida Grande", "Avenir", "Optima"], "policy": "os-superset-restricted" },
+  "locale": { "timezone": "America/Los_Angeles", "acceptLanguage": "en-US,en;q=0.5", "intlLocale": "en-US" },
+  "traces": { "nonNativeToString": 0, "descriptorAnomalies": 0, "crossContextMismatches": 0 },
+  "network": { "_observed": true, "ja3Matches": true, "h2Matches": true, "dnsLeak": false, "webrtcLeak": false },
+  "automation": { "webdriver": false, "cdcArtifacts": 0, "runtimeEnableLeak": false, "untrustedInput": false, "headlessTells": 0 },
+  "context": { "proxyGeoCountry": "US" }
+}

@@ -1,0 +1,13 @@
+# Rationale: speechSynthesis.getVoices returns the OS-appropriate TTS voice list (a classic high-signal surface) (docs/tdd/01 §4.11).
+# Surface: Speech voices
+# Threat-vectors: V1 (media-os)
+# Upstream-risk: LOW. modules/speech/.
+# Tests: v1-coherence/media-os
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

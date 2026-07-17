@@ -1,0 +1,64 @@
+Proteus
+Copyright 2026 The Proteus Authors
+
+This product includes software developed by The Proteus Authors and
+individual contributors, licensed under the Apache License, Version 2.0.
+
+================================================================================
+Third-Party Components
+================================================================================
+
+Proteus builds upon and redistributes modified and unmodified forms of the
+following third-party projects. Each retains its own license. Distributing a
+build of Proteus requires reproducing the corresponding license texts, which
+are collected under `licenses/` in release artifacts.
+
+--------------------------------------------------------------------------------
+Chromium
+--------------------------------------------------------------------------------
+The Proteus Chromium engine is a Derivative Work of the Chromium project.
+Chromium is licensed primarily under the BSD 3-Clause License, and includes
+components under a variety of licenses (LGPL-2.1, MPL-2.0, and others) as
+enumerated in Chromium's own LICENSE and `about:credits`. Modified files carry
+prominent notices of change as required. The complete, unmodified Chromium
+license set is reproduced in release artifacts.
+Upstream: https://www.chromium.org/
+
+--------------------------------------------------------------------------------
+Firefox / Camoufox
+--------------------------------------------------------------------------------
+The Proteus Firefox engine is based on Camoufox, itself a Derivative Work of
+Mozilla Firefox. Firefox and Camoufox are licensed under the Mozilla Public
+License, Version 2.0 (MPL-2.0). Source for modified MPL-covered files is made
+available as required by the MPL. Modifications are contributed upstream where
+practical.
+Upstream: https://github.com/daijro/camoufox  ·  https://www.mozilla.org/firefox/
+
+--------------------------------------------------------------------------------
+ungoogled-chromium (patch methodology)
+--------------------------------------------------------------------------------
+Portions of the Chromium de-integration patch set are derived from or inspired
+by ungoogled-chromium, licensed under BSD 3-Clause.
+Upstream: https://github.com/ungoogled-software/ungoogled-chromium
+
+--------------------------------------------------------------------------------
+uTLS / uquic (Go)
+--------------------------------------------------------------------------------
+The optional active-forgery mode of the network sidecar may link uTLS and uquic,
+licensed under BSD 3-Clause.
+Upstream: https://github.com/refraction-networking/utls
+
+--------------------------------------------------------------------------------
+Other dependencies
+--------------------------------------------------------------------------------
+Rust, Go, and JavaScript/TypeScript dependencies are enumerated with their
+licenses in the generated SBOM (CycloneDX) attached to each release, and in the
+per-crate / per-module license reports under `licenses/` in release artifacts.
+
+================================================================================
+Trademarks
+================================================================================
+"Chromium" is a trademark of Google LLC. "Firefox" and "Mozilla" are trademarks
+of the Mozilla Foundation. Proteus is an independent project and is not
+affiliated with, endorsed by, or sponsored by Google or Mozilla. These names are
+used only nominatively to describe origin and compatibility.

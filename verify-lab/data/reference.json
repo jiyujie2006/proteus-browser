@@ -1,0 +1,265 @@
+{
+  "_comment": "Reference data for coherence rules and M1A deterministic profile generation. This is the machine-readable backbone shared by the fingerprint engine and verification lab. Values are curated seed facts, not population telemetry; the full distribution-backed dataset arrives in M4.",
+  "_version": "0.2.0-m1a-seed",
+  "_rulesVersion": "1.0.0",
+
+  "platformByOs": {
+    "Windows": ["Win32"],
+    "macOS": ["MacIntel", "MacARM"],
+    "Linux": ["Linux x86_64", "Linux aarch64"],
+    "ChromeOS": ["Linux x86_64", "Linux aarch64"],
+    "Android": ["Linux armv8l", "Linux aarch64"],
+    "iOS": ["iPhone", "iPad"]
+  },
+
+  "gpuVendorFamiliesByOs": {
+    "_comment": "Which GPU vendor families are physically possible on each OS. The classic V1 tell is an Apple renderer under Win32. Apple silicon GPUs only appear on macOS/iOS; on Windows/Linux you see NVIDIA/AMD/Intel/(Qualcomm on some ARM laptops).",
+    "Windows": ["NVIDIA", "AMD", "Intel", "Qualcomm", "Microsoft"],
+    "macOS": ["Apple", "AMD", "Intel"],
+    "Linux": ["NVIDIA", "AMD", "Intel"],
+    "ChromeOS": ["Intel", "AMD", "Qualcomm", "Mali", "Adreno"],
+    "Android": ["Adreno", "Mali", "PowerVR", "Xclipse"],
+    "iOS": ["Apple"]
+  },
+
+  "gpuVendorStringMarkers": {
+    "_comment": "Substrings used to classify a WebGL UNMASKED_RENDERER/VENDOR string into a vendor family. Matched case-insensitively.",
+    "NVIDIA": ["nvidia", "geforce", "quadro", "rtx", "gtx"],
+    "AMD": ["amd", "radeon", "ati "],
+    "Intel": ["intel", "hd graphics", "uhd graphics", "iris"],
+    "Apple": ["apple"],
+    "Qualcomm": ["qualcomm", "adreno"],
+    "Adreno": ["adreno"],
+    "Mali": ["mali"],
+    "PowerVR": ["powervr"],
+    "Xclipse": ["xclipse"],
+    "Microsoft": ["microsoft basic", "microsoft corporation"]
+  },
+
+  "fontsByOs": {
+    "_comment": "core = fonts that MUST be present for the OS; superset = the full plausible set the presented font list must stay within. A macOS persona exposing Segoe UI (Windows) or missing SF Pro is a V1 tell. Lists are representative, not exhaustive.",
+    "Windows": {
+      "core": ["Arial", "Calibri", "Cambria", "Consolas", "Segoe UI", "Tahoma", "Times New Roman", "Verdana", "Courier New"],
+      "superset": ["Arial", "Arial Black", "Calibri", "Cambria", "Cambria Math", "Candara", "Comic Sans MS", "Consolas", "Constantia", "Corbel", "Courier New", "Ebrima", "Franklin Gothic", "Gabriola", "Georgia", "Impact", "Lucida Console", "Lucida Sans Unicode", "Malgun Gothic", "Microsoft Sans Serif", "Palatino Linotype", "Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "SimSun", "Sitka", "Sylfaen", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana", "Webdings", "Wingdings", "Yu Gothic"]
+    },
+    "macOS": {
+      "core": ["Helvetica", "Helvetica Neue", "Menlo", "SF Pro", "Times", "Geneva", "Monaco", "Lucida Grande"],
+      "superset": ["American Typewriter", "Andale Mono", "Apple Chancery", "Apple Color Emoji", "Apple SD Gothic Neo", "AppleGothic", "Arial", "Arial Black", "Avenir", "Avenir Next", "Baskerville", "Big Caslon", "Chalkboard", "Cochin", "Copperplate", "Courier", "Courier New", "Didot", "Futura", "Geneva", "Georgia", "Gill Sans", "Helvetica", "Helvetica Neue", "Hoefler Text", "Lucida Grande", "Menlo", "Monaco", "Optima", "Palatino", "SF Pro", "SF Pro Display", "SF Pro Text", "SF Mono", "Times", "Times New Roman", "Trebuchet MS", "Verdana", "Zapfino"]
+    },
+    "Linux": {
+      "core": ["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono", "Liberation Sans", "Liberation Serif"],
+      "superset": ["Bitstream Vera Sans", "Cantarell", "DejaVu Sans", "DejaVu Sans Mono", "DejaVu Serif", "Droid Sans", "FreeMono", "FreeSans", "FreeSerif", "Liberation Mono", "Liberation Sans", "Liberation Serif", "Noto Sans", "Noto Serif", "Noto Color Emoji", "Ubuntu", "Ubuntu Mono", "Nimbus Roman", "Nimbus Sans", "URW Bookman"]
+    }
+  },
+
+  "screenTuplesByClass": {
+    "_comment": "Really-shipped (width, height, dpr) combos. colorDepth is essentially always 24 (or 30 on some HDR macs). A tuple outside these for the class is a V1/V2 tell (rule R-SCREEN-REAL). Representative common modes.",
+    "desktop": [
+      { "width": 1920, "height": 1080, "dpr": 1.0 },
+      { "width": 2560, "height": 1440, "dpr": 1.0 },
+      { "width": 3840, "height": 2160, "dpr": 1.0 },
+      { "width": 3840, "height": 2160, "dpr": 1.5 },
+      { "width": 1536, "height": 864, "dpr": 1.25 },
+      { "width": 1280, "height": 720, "dpr": 1.0 }
+    ],
+    "laptop": [
+      { "width": 1920, "height": 1080, "dpr": 1.0 },
+      { "width": 1536, "height": 864, "dpr": 1.25 },
+      { "width": 1366, "height": 768, "dpr": 1.0 },
+      { "width": 1440, "height": 900, "dpr": 2.0 },
+      { "width": 1680, "height": 1050, "dpr": 2.0 },
+      { "width": 2560, "height": 1600, "dpr": 2.0 },
+      { "width": 1512, "height": 982, "dpr": 2.0 }
+    ]
+  },
+
+  "hardwareByClass": {
+    "_comment": "Plausible (hardwareConcurrency, deviceMemory-GiB) pairs by class (rule R-HW-PAIR). deviceMemory is a coarse Chrome-reported bucket capped at 8. The tell is an implausible pair like 32 cores / 0.25 GiB.",
+    "desktop": { "coresMin": 4, "coresMax": 32, "memoryValues": [4, 8], "minMemoryForCores": { "16": 8, "24": 8, "32": 8 } },
+    "laptop": { "coresMin": 4, "coresMax": 16, "memoryValues": [4, 8], "minMemoryForCores": { "12": 8, "16": 8 } }
+  },
+
+  "localeByRegion": {
+    "_comment": "region -> expected timezone(s) and primary Accept-Language head. Used for R-TZ-GEO and R-LANG when a proxy geo / region is known. Representative subset.",
+    "US": { "timezones": ["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Phoenix"], "languageHead": "en-US" },
+    "GB": { "timezones": ["Europe/London"], "languageHead": "en-GB" },
+    "DE": { "timezones": ["Europe/Berlin"], "languageHead": "de-DE" },
+    "FR": { "timezones": ["Europe/Paris"], "languageHead": "fr-FR" },
+    "JP": { "timezones": ["Asia/Tokyo"], "languageHead": "ja-JP" },
+    "BR": { "timezones": ["America/Sao_Paulo"], "languageHead": "pt-BR" },
+    "IN": { "timezones": ["Asia/Kolkata"], "languageHead": "en-IN" },
+    "AU": { "timezones": ["Australia/Sydney", "Australia/Melbourne", "Australia/Perth"], "languageHead": "en-AU" },
+    "CA": { "timezones": ["America/Toronto", "America/Vancouver", "America/Edmonton"], "languageHead": "en-CA" },
+    "RU": { "timezones": ["Europe/Moscow"], "languageHead": "ru-RU" }
+  },
+
+  "timezoneToRegion": {
+    "_comment": "Reverse map: IANA timezone -> region code, so a config carrying only a timezone can still be checked against a proxy's country.",
+    "America/New_York": "US", "America/Chicago": "US", "America/Denver": "US", "America/Los_Angeles": "US", "America/Phoenix": "US",
+    "Europe/London": "GB", "Europe/Berlin": "DE", "Europe/Paris": "FR", "Asia/Tokyo": "JP",
+    "America/Sao_Paulo": "BR", "Asia/Kolkata": "IN",
+    "Australia/Sydney": "AU", "Australia/Melbourne": "AU", "Australia/Perth": "AU",
+    "America/Toronto": "CA", "America/Vancouver": "CA", "America/Edmonton": "CA",
+    "Europe/Moscow": "RU"
+  },
+
+  "browserFamily": {
+    "_comment": "brand -> engine family, to enforce no cross-family impersonation (ADR 0002). A UA/CH combination claiming a brand from the wrong family is rejected.",
+    "Chrome": "chromium",
+    "Edge": "chromium",
+    "Brave": "chromium",
+    "Opera": "chromium",
+    "Firefox": "firefox",
+    "Safari": "webkit"
+  },
+
+  "liveVersionWindow": {
+    "_comment": "Currently-plausible major-version window per brand (rule R-VERSION-LIVE). A version far outside the live window is a V2 rarity signal. These are seed values as of the M0 dataset snapshot and are refreshed out-of-band (tdd/05 §6); staleness is a tracked bug. NOTE: this window was corrected after the M0 live-drive harness observed the actually-installed Chrome 150 / Firefox 152 (2026-07) — the original seed lowballed the window and false-flagged current Chrome, a real demonstration of the staleness risk the dataset-refresh cadence exists to prevent.",
+    "_snapshotDate": "2026-07",
+    "Chrome": { "min": 144, "max": 152 },
+    "Edge": { "min": 144, "max": 152 },
+    "Brave": { "min": 144, "max": 152 },
+    "Opera": { "min": 130, "max": 138 },
+    "Firefox": { "min": 148, "max": 154 }
+  },
+
+  "vendorByFamily": {
+    "_comment": "Expected navigator.vendor per engine family (a Firefox reporting 'Google Inc.' is a tell).",
+    "chromium": "Google Inc.",
+    "firefox": "",
+    "webkit": "Apple Computer, Inc."
+  },
+
+  "engineTargets": [
+    {
+      "family": "chromium",
+      "brand": "Chrome",
+      "majorVersion": 150,
+      "fullVersion": "150.0.7871.124",
+      "weight": 100,
+      "platformVersions": {
+        "Windows": "15.0.0",
+        "macOS": "15.0.0",
+        "Linux": "0.0.0"
+      }
+    }
+  ],
+
+  "gpuProfilesByOs": {
+    "_comment": "Curated, internally-linked WebGL/WebGPU profiles used by the transparent M1A sampler. Weights are seed heuristics, not claimed market-share measurements.",
+    "Windows": [
+      {
+        "family": "Intel",
+        "webglVendor": "Google Inc. (Intel)",
+        "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webgpuAdapter": {
+          "family": "Intel",
+          "vendor": "intel",
+          "architecture": "gen-9",
+          "device": "0x3e92",
+          "description": "Intel(R) UHD Graphics 630"
+        },
+        "weight": 45
+      },
+      {
+        "family": "NVIDIA",
+        "webglVendor": "Google Inc. (NVIDIA)",
+        "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webgpuAdapter": {
+          "family": "NVIDIA",
+          "vendor": "nvidia",
+          "architecture": "ampere",
+          "device": "0x2503",
+          "description": "NVIDIA GeForce RTX 3060"
+        },
+        "weight": 35
+      },
+      {
+        "family": "AMD",
+        "webglVendor": "Google Inc. (AMD)",
+        "webglRenderer": "ANGLE (AMD, AMD Radeon RX 6600 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webgpuAdapter": {
+          "family": "AMD",
+          "vendor": "amd",
+          "architecture": "rdna2",
+          "device": "0x73ff",
+          "description": "AMD Radeon RX 6600 XT"
+        },
+        "weight": 20
+      }
+    ]
+  },
+
+  "screenWeightsByClass": {
+    "_comment": "Seed heuristic weights keyed by width x height @ DPR; only used for transparent M1A sampling/rarity ordering.",
+    "desktop": {
+      "1920x1080@1": 50,
+      "2560x1440@1": 22,
+      "3840x2160@1": 8,
+      "3840x2160@1.5": 4,
+      "1536x864@1.25": 12,
+      "1280x720@1": 4
+    },
+    "laptop": {
+      "1920x1080@1": 26,
+      "1536x864@1.25": 24,
+      "1366x768@1": 22,
+      "1440x900@2": 8,
+      "1680x1050@2": 5,
+      "2560x1600@2": 8,
+      "1512x982@2": 7
+    }
+  },
+
+  "hardwarePairsByClass": {
+    "_comment": "Explicit joint candidates prevent independent core/memory draws. Weights are seed heuristics.",
+    "desktop": [
+      { "hardwareConcurrency": 8, "deviceMemory": 8, "weight": 45 },
+      { "hardwareConcurrency": 4, "deviceMemory": 8, "weight": 25 },
+      { "hardwareConcurrency": 12, "deviceMemory": 8, "weight": 20 },
+      { "hardwareConcurrency": 16, "deviceMemory": 8, "weight": 10 }
+    ],
+    "laptop": [
+      { "hardwareConcurrency": 8, "deviceMemory": 8, "weight": 40 },
+      { "hardwareConcurrency": 4, "deviceMemory": 8, "weight": 30 },
+      { "hardwareConcurrency": 4, "deviceMemory": 4, "weight": 20 },
+      { "hardwareConcurrency": 12, "deviceMemory": 8, "weight": 10 }
+    ]
+  },
+
+  "fontProfilesByOs": {
+    "_comment": "Redistribution is handled separately; these are presented-name policies, not bundled font files.",
+    "Windows": [
+      {
+        "id": "windows-11-common",
+        "set": ["Arial", "Calibri", "Cambria", "Cambria Math", "Consolas", "Courier New", "Georgia", "Segoe UI", "Segoe UI Emoji", "Segoe UI Symbol", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana"],
+        "weight": 100
+      }
+    ]
+  },
+
+  "mediaProfilesByOs": {
+    "Windows": [
+      {
+        "id": "windows-11-common",
+        "devices": [
+          { "kind": "audioinput", "label": "Microphone (Realtek(R) Audio)" },
+          { "kind": "audiooutput", "label": "Speakers (Realtek(R) Audio)" },
+          { "kind": "videoinput", "label": "Integrated Camera" }
+        ],
+        "speechVoices": [
+          { "name": "Microsoft David - English (United States)", "lang": "en-US", "localService": true, "default": true },
+          { "name": "Microsoft Zira - English (United States)", "lang": "en-US", "localService": true, "default": false }
+        ],
+        "weight": 100
+      }
+    ]
+  },
+
+  "performanceByFamily": {
+    "_comment": "Unisolated-context timer precision in microseconds for the seed target. Rich per-version modeling belongs to M4.",
+    "chromium": {
+      "timerPrecisionMicros": 100
+    }
+  }
+}

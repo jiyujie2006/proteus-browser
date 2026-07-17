@@ -1,0 +1,13 @@
+# Rationale: Adopt the ungoogled-chromium patch set wholesale to strip Google telemetry, integration, and phone-home. This is upstream-ish and stable; we track ungoogled's series rather than re-deriving it (BSD-3, see ../../NOTICE).
+# Surface: Google integration / telemetry removal
+# Threat-vectors: reduces ambient network signals; not a fingerprint surface itself
+# Upstream-risk: LOW-MED. ungoogled maintains this against upstream; we consume their series. Conflicts are ungoogled's to resolve first.
+# Tests: n/a (behavioral; covered by no-telemetry integration checks)
+# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+#
+# This header is a valid, reviewable specification. The unified diff below is
+# empty in M0 (no Chromium checkout to diff against) and will be produced by
+# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
+# during M1 implementation.
+#
+# (no diff hunks yet — M0 placeholder)

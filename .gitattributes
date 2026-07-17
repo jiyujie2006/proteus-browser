@@ -1,0 +1,12 @@
+* text=auto
+
+# Exact dataset-byte hashes and signing vectors require stable checkouts.
+*.json text eol=lf
+*.rs text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.patch text eol=lf

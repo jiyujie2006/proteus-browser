@@ -1,0 +1,11 @@
+{
+  "id": "proteus-profile-config-v1-windows-chrome-us",
+  "canonicalization": "RFC8785",
+  "domain": "proteus-profile-config/v1",
+  "signingPrefixHex": "50524f544555532d50524f46494c452d434f4e46494700763100",
+  "keyId": "proteus-m1a-test-key",
+  "canonicalPayloadSha256": "19bf3241b393b2c6bef029859645d5f95294bc1c19f04ebb420cb5a77c2d50dc",
+  "signingInputSha256": "3777747e2b3c0762833364f1692199d0b7fcf5171c069257c5a51026ba073d64",
+  "publicKeyBase64": "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y=",
+  "signatureBase64": "65XIfDi+hORSjpfkGzZ2gcje9ry4VQANcAoihudJvRpyx7iO9H9Nzpe4qqX4HQE5/w/qiLLDtKA5zXhz5zGCBw=="
+}
