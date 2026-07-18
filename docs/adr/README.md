@@ -19,6 +19,7 @@ Format: lightweight [MADR](https://adr.github.io/madr/)-style.
 | [0005](0005-native-over-injection.md) | Native engine production over JS injection | Accepted |
 | [0006](0006-config-driven-single-binary.md) | One engine binary, N identities via signed config | Accepted |
 | [0007](0007-fleet-de-correlation.md) | Treat the tool's own fleet/cohort signature as a first-class, measured threat (V2b) | Accepted |
+| [0008](0008-staged-platform-rollout.md) | Stage host support: Linux first, macOS and Windows later, without weakening hard M0 | Accepted |
 
 ## Proposed / future ADRs (not yet written — flagged where the doc calls for them)
 
@@ -28,5 +29,9 @@ Format: lightweight [MADR](https://adr.github.io/madr/)-style.
 - **Config propagation mechanism** — Mojo interface vs. serialized blob for
   getting the config into renderers ([tdd/01](../tdd/01-chromium-engine.md) §3);
   decide after M0/M1 prototyping.
-- **Build infrastructure** — hosted runners vs. self-hosted farm, once M0 measures
-  real build/rebase times ([tdd/05](../tdd/05-build-and-tracking.md)).
+- **Hard-M0/release build infrastructure** — ADR 0008 selects owner-controlled
+  self-hosted Actions for the non-release Linux development lane. Infrastructure
+  for the later macOS/Windows work, and larger hosted runners vs. an independently
+  controlled external-ephemeral farm for the three-platform hard/release lane,
+  remain open
+  ([tdd/05](../tdd/05-build-and-tracking.md)).

@@ -6,16 +6,19 @@ in the [TDDs](tdd/); this is the map that shows how they connect.
 
 > **Implementation status:** this document describes the target system. Today,
 > the bounded M1A Rust signed-config core and independent Node conformance checks
-> are implemented. The Chromium M0 contracts and GitHub-hosted reference
-> workflow are implemented, but its production runner/controller backend is not
-> and no authenticated engine binary has passed the six-build hard gate; native
-> config ingest, fingerprint surfaces, cross-context
-> propagation, Manager, sidecar, and UI do not exist. One real
-> Proteus-authored layer0 patch is the active M0 input; it only defaults
-> Google-backed Network Time querying off and is not a complete de-Google
-> claim. Sixteen later-milestone specifications are held in separate backlogs.
-> The hard M0 build exit is still evidence-gated;
-> see [M0.md](../M0.md) and [M1A.md](../M1A.md).
+> are implemented. The active platform rollout is Linux first: `M0-Linux` is a
+> planned non-release development checkpoint, while macOS and Windows host work
+> follows in a later platform-completion phase. The Chromium M0 contracts and
+> GitHub-hosted reference workflow already describe the unchanged
+> three-platform hard exit
+> (`M0-Full` in planning prose), but its production runner/controller backend is
+> not implemented and no authenticated engine binary has passed the six-build
+> gate. Native config ingest, fingerprint surfaces, cross-context propagation,
+> Manager, sidecar, and UI do not exist. One real Proteus-authored layer0 patch
+> is the active M0 input; it only defaults Google-backed Network Time querying
+> off and is not a complete de-Google claim. Sixteen later-milestone
+> specifications are held in separate backlogs. See [M0.md](../M0.md) and
+> [M1A.md](../M1A.md).
 
 ## 1. Design constraints that shape the architecture
 

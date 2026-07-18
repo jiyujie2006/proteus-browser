@@ -1,22 +1,30 @@
 # engine-chromium — Proteus Chromium engine (M0 worktree)
 
-> **M0 status: contracts and GitHub-hosted reference workflow implemented;
-> production execution backend pending.** This directory contains the active
-> patch, exact source/dependency/toolchain contracts, platform build scripts,
-> runtime packaging, artifact SBOM/license generation, six-run evidence
-> producer, and strict verifier—but **it has no currently viable macOS runner
-> backend and does not commit a Chromium checkout or produced binary.**
+> **M0 status: Linux-first rollout adopted; no real engine build has passed
+> yet.** `M0-Linux` is the planned non-release development checkpoint for
+> Linux x64 on an owner-controlled self-hosted Actions runner. macOS universal
+> and Windows x64 host work follows in a later platform-completion phase.
+> The existing three-platform hard contract is called `M0-Full` in planning
+> prose, while all machine-facing names remain `M0`. This directory contains
+> the active patch, exact source/dependency/toolchain contracts, platform build
+> scripts, runtime packaging, artifact SBOM/license generation, six-run evidence
+> producer, and strict verifier—but it does not yet contain the separate
+> M0-Linux workflow, the later macOS/Windows development lanes, a viable macOS
+> runner backend, a Chromium checkout, or a produced binary.
 >
 > That is deliberate and honest: a Chromium build needs **~100 GB of disk, 16 GB+
 > RAM, `depot_tools`, and hours of compute** (or a warm `sccache`). It runs on the
-> dedicated build farm described in
+> a suitably provisioned local/self-hosted machine or build farm described in
 > [`docs/tdd/05-build-and-tracking.md`](../docs/tdd/05-build-and-tracking.md) §2,
-> not on a laptop. The current workflow accepts only GitHub-hosted builders, whose
-> configured macOS class lacks Chromium-scale storage. External-ephemeral
-> verification is only a schema today; a trusted controller, pinned key,
-> post-destruction receipt, and independent finalizer remain to be built. The
-> hard gate establishes M0 only after real A/B outputs from all three platforms
-> pass byte-level, Sigstore, and GitHub-identity checks.
+> including a sufficiently large developer workstation. The current hard
+> workflow accepts only GitHub-hosted builders, whose configured macOS class
+> lacks Chromium-scale storage; it must not be relaxed for M0-Linux. A separate
+> manual self-hosted lane will produce developer-attested Linux A/B evidence.
+> External-ephemeral verification is only a schema today; a trusted
+> controller, pinned key, post-destruction receipt, and independent finalizer
+> remain to be built. The hard gate establishes M0-Full only after real A/B
+> outputs from all three platforms pass byte-level, Sigstore, and
+> GitHub-identity checks.
 
 ## What M0 delivers here
 
@@ -31,6 +39,7 @@
 | Platform build/finalization | `scripts/build-{linux,macos,windows}.*`, `scripts/finalize-m0-build.*` | Fetches, patches, builds, captures effective args/toolchains/runtime closure, packages the complete bundle, drives the live ruler, and emits the artifact SBOM |
 | Hard-M0 producer + verifier | `scripts/m0-build-record.mjs`, `../scripts/m0-evidence-v2.mjs` | Produces canonical predicates/records and independently recomputes all bundle/API/attestation facts at `full-bundle-builder-attested/v2` |
 | Six-run reference workflow | `../.github/workflows/m0-{builder,aggregate,hard-gate}.yml` | Defines one fresh GitHub-hosted run per platform/slot and six-run verification; production runner/controller integration remains open |
+| M0-Linux development lane | Planned separate workflow and evidence namespace | Not implemented; will run Linux A/B builds on an owner-controlled self-hosted Actions runner and must remain developer-attested |
 | Reproducible-build flags + legacy provenance | `scripts/provenance.mjs`, `build/args.gn` | **Runs now**; the demo remains explicitly below the v2 hard gate |
 | Version-tracking bot pipeline | `tracking-bot/pipeline.mjs` | **Runs now** in `--dry-run`; a state-machine scaffold, not proof that real stages integrate |
 | Repository component metadata check | `scripts/sbom.mjs` | **Runs now** — declares current repository components, including Chromium source context, in a clearly marked CycloneDX-shaped stub; not a production SBOM or redistribution decision |
@@ -47,6 +56,11 @@ integration or a successful Chromium build.
   Google-backed Network Time querying off, but an explicit feature override can
   re-enable it. It is deliberately bounded and is not complete de-Googling.
   Sixteen future specifications are catalogued but do not gate M0.
+- M0-Linux is allowed to establish Linux build bring-up and developer-level
+  determinism before that hard gate. It cannot claim macOS or Windows host
+  support, release readiness, independent builder trust, or
+  `full-bundle-builder-attested/v2`, and it cannot make
+  `npm run m0:milestone` green.
 - Reproducibility and SLSA provenance are **designed in from the first build**
   (Principle VI), not bolted on — see `scripts/provenance.mjs` and `build/args.gn`.
 - The VERIFY step calls the artifact-driven verification lab and binds its
@@ -54,8 +68,9 @@ integration or a successful Chromium build.
   Proteus-authored assertion on the compiled Network Time feature default plus
   Chromium's upstream explicit disable/enable regression; the live report
   gracefully closes Chromium, reads one stable bounded NetLog, and fails if the
-  default Google time endpoint appears. That integration still has to be
-  exercised by the first real six-build run.
+  default Google time endpoint appears. That integration will first be
+  exercised by M0-Linux, then by the deferred macOS/Windows work and full
+  six-build run.
 - Machine live-drive reports require a caller-claimed external disposable
   runner and label local process cleanup as best-effort. The hard exit still
   needs builder-attested VM/container/job containment; a CLI flag is not proof.

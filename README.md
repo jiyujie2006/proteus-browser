@@ -10,13 +10,17 @@ Target: local-first · reproducible builds · native dual-engine · Apache-2.0
 
 ---
 
-> **Status: Pre-alpha, non-UI core work in progress.** The M0 ruler, hard
-> evidence contracts, and GitHub-hosted reference workflow are implemented, and
-> the M1A deterministic signed-config core is tested. The M0 production path is
-> still missing a viable Chromium-scale macOS runner or trusted
-> external-ephemeral controller/finalizer, so no six-build hard evidence set
-> exists. No fixture can substitute for it. No modified engine binary, native
-> fingerprint/config integration, Manager, or UI is shipped. See
+> **Status: Pre-alpha, non-UI core work in progress.** Development now follows a
+> Linux-first rollout. The planned `M0-Linux` checkpoint will bring up a real
+> Linux x64 build through an owner-controlled Actions lane; it has not passed
+> yet. Host support for macOS and Windows follows in a later
+> platform-completion phase. Those platforms do not block Linux engine work,
+> but both remain mandatory for the
+> existing three-platform hard M0 (called `M0-Full` in planning prose; machine
+> contract names remain `M0`). The ruler, hard evidence contracts, hosted
+> reference workflow, and M1A deterministic signed-config core are tested, but
+> no engine binary, native fingerprint/config integration, Manager, or UI is
+> shipped. See
 > [`M0.md`](M0.md), [`M1A.md`](M1A.md), and the
 > [roadmap](docs/06-roadmap.md).
 

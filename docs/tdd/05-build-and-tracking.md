@@ -13,6 +13,9 @@ automated, not an afterthought.
 **Goals**
 - Build the modified Chromium (and package the Camoufox-based Firefox) for
   Windows, macOS, Linux, reproducibly.
+- Stage delivery so an owner-controlled Linux build unblocks non-UI engine
+  development before macOS and Windows host work, without weakening the
+  eventual three-platform release claim.
 - **Automatically** rebase the patch series onto new Chromium stable releases,
   run the verification lab, and publish a green build with minimal human touch.
 - **Reproducible builds + SLSA provenance** so users can trust the binary
@@ -29,8 +32,10 @@ automated, not an afterthought.
 ## 2. Build system
 
 **Toolchain:** Chromium's native `depot_tools`, `gn` + `ninja`, with **`sccache`**
-(or `reclient` where available) for aggressive compile caching. Cross-compilation
-targets Win/mac/Linux; codesigning/notarization per platform on release.
+(or `reclient` where available) for aggressive compile caching. Builds are
+platform-native. The active first target is Linux x64; macOS universal and
+Windows x64 compilation, plus platform signing/notarization, follow in the
+deferred platform-completion phase.
 
 The hard-M0 A/B evidence profile is intentionally stricter than that target
 throughput configuration: its immutable contract sets `cachePolicy=disabled`
@@ -39,10 +44,23 @@ configuration, namespace, and resolved inputs are added to a reviewed contract;
 until then it would be an undeclared shared input between supposedly independent
 rebuilds.
 
-**Infrastructure options (decided by budget, see sustainability):**
-- Large CI runners (hosted) for occasional builds, or
-- A self-hosted build farm for frequent rebases (Chromium is enormous; cache hit
-  rate dominates wall-clock).
+Two lanes keep development evidence separate from release assurance:
+
+- **M0-Linux developer lane:** GitHub Actions manually dispatches pinned `main`
+  builds to an owner-controlled self-hosted Linux machine. Linux first gets a
+  bring-up run, then A/B runs with clean build roots and disabled undeclared
+  caches. The output is explicitly **developer-attested**.
+- **M0-Full hard lane:** the existing machine-facing `M0` contract remains
+  GitHub-hosted or independently controlled external-ephemeral, with six
+  independently authenticated A/B runs across Linux, Windows, and macOS. The
+  developer lane is not an alternate input to this verifier. macOS and Windows
+  host bring-up occurs after M0-Linux and before this full gate.
+
+The M0-Linux runner choice is therefore settled. The eventual macOS/Windows
+development lanes and hard/release farm are still decided by budget and
+measured build time: large hosted runners for occasional builds, or an
+external-ephemeral/self-hosted farm with a separately trusted lifecycle
+controller and finalizer for frequent rebases.
 
 **Artifacts:** per-platform engine bundles (engine + bundled fonts + default
 signed dataset), each with a manifest recording: Chromium base version, patch
@@ -89,7 +107,7 @@ A scheduled pipeline:
                                open an issue tagged with the surface +
                                Upstream-risk note + the conflicting hunk,
                                ping the surface owner. STOP.
-4. BUILD     gn+ninja on the hard evidence profile, all platforms
+4. BUILD     gn+ninja on the applicable profile and platform set
 5. VERIFY    run the full verification-lab suite (tdd/06) headless
                 ├─ all green ─────────────────────▶ continue
                 └─ any probe regressed ─▶ open an issue with the exact
@@ -153,9 +171,28 @@ public source.
 
 ## 8. CI gates (what must pass before anything ships)
 
+The development checkpoint and release gate intentionally have different trust
+claims.
+
+### M0-Linux development checkpoint
+
+1. The exact pinned `main` commit and declared active patch profile are used on
+   Linux x64.
+2. Linux completes A/B builds from clean roots and the complete bundle trees
+   match byte-for-byte.
+3. `components_unittests`, the Network Time assertion, artifact-driven
+   verification lab, dependency/toolchain locks, licenses, SBOM, and build
+   records all complete.
+4. Actions records the result as developer-attested. This checkpoint does not
+   authorize publication, claim independent supply-chain assurance, or satisfy
+   the hard `M0` verifier.
+
+### M0-Full and release gates
+
 1. The declared active patch profile applies on the exact pinned Chromium
    commit; the official tag resolves to that commit.
-2. Builds succeed on all platforms.
+2. Builds succeed on every declared release platform; the full M0 exit requires
+   Windows x64, macOS universal, and Linux x64 A/B evidence.
 3. **Verification-lab suite green** (V1–V5 probes) — no regressions vs. last
    release (Principle VII).
 3b. **Fleet de-correlation green** (V2b): the red-team cohort classifier (tdd/06
@@ -193,8 +230,10 @@ single profile looks fine.
 
 ## 11. Open questions
 
-- Hosted runners vs. self-hosted farm for the expected rebase cadence — model
-  cost in M0 once build times are measured.
+- Larger hosted runners vs. an independently controlled external-ephemeral farm
+  for the deferred macOS/Windows lanes, M0-Full, and the expected release/rebase
+  cadence. M0-Linux deliberately uses an owner-controlled self-hosted Actions
+  runner and will provide the first real timing data.
 - Exact SLSA level target (aim for a high, independently-verifiable level) and
   which attestation tooling.
 - How far ahead to run beta/dev look-ahead (every beta vs. milestone betas).
