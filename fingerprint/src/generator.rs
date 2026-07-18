@@ -4,12 +4,11 @@ use crate::GENERATOR_VERSION;
 use crate::dataset::Dataset;
 use crate::error::{FingerprintError, Result};
 use crate::model::{
-    BrandVersion, BrowserBrand, ClientHintsConfig, ClientRectsMode, ClientRectsNoise, ConfigBody,
-    DeviceClass, EngineConfig, EngineFamily, EngineRequest, FontConfig, FontPolicy,
-    GenerateRequest, GpuConfig, LocaleConfig, MediaConfig, MediaDevice, NavigatorConfig,
-    NetworkConfig, NoiseAmplitude, NoiseConfig, NoiseMode, NoiseSpec, OsName, PerformanceConfig,
-    PersonaConfig, PersonaParams, Provenance, QuicPolicy, RarityConfig, RarityVerdict,
-    ScreenConfig, WebRtcPolicy,
+    BrowserBrand, ClientHintsConfig, ClientRectsMode, ClientRectsNoise, ConfigBody, DeviceClass,
+    EngineConfig, EngineFamily, EngineRequest, FontConfig, FontPolicy, GenerateRequest, GpuConfig,
+    LocaleConfig, MediaConfig, MediaDevice, NavigatorConfig, NetworkConfig, NoiseAmplitude,
+    NoiseConfig, NoiseMode, NoiseSpec, OsName, PerformanceConfig, PersonaConfig, PersonaParams,
+    Provenance, QuicPolicy, RarityConfig, RarityVerdict, ScreenConfig, WebRtcPolicy,
 };
 use crate::sampler::DeterministicSampler;
 use crate::validate::validate;
@@ -30,11 +29,17 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
     validate_request(request)?;
     let sampler = DeterministicSampler::new(seed);
 
+    if request.engine.brand != BrowserBrand::Chrome {
+        return Err(FingerprintError::NoCandidate(
+            "M1A currently supports the Chromium/Chrome target only".into(),
+        ));
+    }
     let targets = dataset
         .engine_targets
         .iter()
         .filter(|target| {
-            target.brand == request.engine.brand.as_str()
+            target.family == "chromium"
+                && target.brand == request.engine.brand.as_str()
                 && target.major_version == request.engine.major_version
         })
         .collect::<Vec<_>>();
@@ -46,11 +51,6 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
             .collect::<Vec<_>>(),
     )?;
     let target = targets[target_index];
-    if target.family != "chromium" || request.engine.brand != BrowserBrand::Chrome {
-        return Err(FingerprintError::NoCandidate(
-            "M1A currently supports the Chromium/Chrome target only".into(),
-        ));
-    }
 
     let os_name = request.persona.os.name.as_str();
     if request.persona.os.name != OsName::Windows {
@@ -76,7 +76,16 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
             FingerprintError::NoCandidate(format!("no navigator platform for {os_name}"))
         })?;
 
-    let gpu_candidates = required_candidates(&dataset.gpu_profiles_by_os, os_name, "GPU")?;
+    let class = request.persona.device.class.as_str();
+    let all_gpu_candidates = required_candidates(&dataset.gpu_profiles_by_os, os_name, "GPU")?;
+    let gpu_candidates = all_gpu_candidates
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .allowed_device_classes
+                .contains(&request.persona.device.class)
+        })
+        .collect::<Vec<_>>();
     let gpu_index = sampler.choose_weighted(
         "gpu",
         &gpu_candidates
@@ -84,9 +93,8 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
             .map(|candidate| candidate.weight)
             .collect::<Vec<_>>(),
     )?;
-    let gpu = &gpu_candidates[gpu_index];
+    let gpu = gpu_candidates[gpu_index];
 
-    let class = request.persona.device.class.as_str();
     let screen_candidates = required_candidates(&dataset.screen_tuples_by_class, class, "screen")?;
     let screen_weights = dataset
         .screen_weights_by_class
@@ -166,8 +174,7 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
         .unwrap_or_else(|| derived_uuid(&sampler));
     let canonical_seed = STANDARD.encode(seed);
     let full_version = target.full_version.clone();
-    let major = target.major_version.to_string();
-    let user_agent = windows_chrome_user_agent(&full_version);
+    let user_agent = windows_chrome_user_agent(target.major_version);
     let platform_version = target
         .platform_versions
         .get(os_name)
@@ -200,7 +207,7 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
         (
             "GPU profile",
             gpu.weight,
-            max_weight(gpu_candidates, |item| item.weight),
+            max_weight(&gpu_candidates, |item| item.weight),
         ),
         (
             "screen tuple",
@@ -255,34 +262,8 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
             oscpu: None,
         },
         client_hints: Some(ClientHintsConfig {
-            brands: vec![
-                BrandVersion {
-                    brand: "Chromium".into(),
-                    version: major.clone(),
-                },
-                BrandVersion {
-                    brand: "Google Chrome".into(),
-                    version: major,
-                },
-                BrandVersion {
-                    brand: "Not_A Brand".into(),
-                    version: "99".into(),
-                },
-            ],
-            full_version_list: vec![
-                BrandVersion {
-                    brand: "Chromium".into(),
-                    version: full_version.clone(),
-                },
-                BrandVersion {
-                    brand: "Google Chrome".into(),
-                    version: full_version,
-                },
-                BrandVersion {
-                    brand: "Not_A Brand".into(),
-                    version: "99.0.0.0".into(),
-                },
-            ],
+            brands: target.client_hint_brands.clone(),
+            full_version_list: target.client_hint_full_version_list.clone(),
             platform: "Windows".into(),
             platform_version,
             architecture: "x86".into(),
@@ -301,7 +282,7 @@ pub fn generate(request: &GenerateRequest, dataset: &Dataset) -> Result<Generate
         gpu: GpuConfig {
             webgl_vendor: gpu.webgl_vendor.clone(),
             webgl_renderer: gpu.webgl_renderer.clone(),
-            webgl_extensions: common_webgl_extensions(),
+            webgl_extensions: gpu.webgl_extensions.clone(),
             webgpu_adapter: Some(gpu.webgpu_adapter.clone()),
         },
         fonts: FontConfig {
@@ -371,18 +352,29 @@ pub fn rescore(config: &ConfigBody, dataset: &Dataset) -> Result<RarityConfig> {
         .filter(|target| {
             target.family == config.engine.family.as_str()
                 && target.brand == config.engine.brand.as_str()
+                && target.major_version == config.engine.major_version
         })
         .collect::<Vec<_>>();
     let target = target_candidates
         .iter()
         .find(|target| target.full_version == config.engine.full_version)
         .ok_or_else(|| FingerprintError::NoCandidate("engine target is not in dataset".into()))?;
-    let gpu_candidates = required_candidates(&dataset.gpu_profiles_by_os, os, "GPU")?;
+    let all_gpu_candidates = required_candidates(&dataset.gpu_profiles_by_os, os, "GPU")?;
+    let gpu_candidates = all_gpu_candidates
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .allowed_device_classes
+                .contains(&config.persona.device.class)
+        })
+        .collect::<Vec<_>>();
     let gpu = gpu_candidates
         .iter()
         .find(|candidate| {
             candidate.webgl_vendor == config.gpu.webgl_vendor
                 && candidate.webgl_renderer == config.gpu.webgl_renderer
+                && candidate.webgl_extensions == config.gpu.webgl_extensions
+                && config.gpu.webgpu_adapter.as_ref() == Some(&candidate.webgpu_adapter)
         })
         .ok_or_else(|| FingerprintError::NoCandidate("GPU profile is not in dataset".into()))?;
     let screen_weights = dataset
@@ -427,7 +419,7 @@ pub fn rescore(config: &ConfigBody, dataset: &Dataset) -> Result<RarityConfig> {
         (
             "GPU profile",
             gpu.weight,
-            max_weight(gpu_candidates, |item| item.weight),
+            max_weight(&gpu_candidates, |item| item.weight),
         ),
         (
             "screen tuple",
@@ -613,10 +605,10 @@ fn derived_uuid(sampler: &DeterministicSampler) -> String {
     )
 }
 
-fn windows_chrome_user_agent(full_version: &str) -> String {
+pub(crate) fn windows_chrome_user_agent(major_version: u32) -> String {
     format!(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-         (KHTML, like Gecko) Chrome/{full_version} Safari/537.36"
+         (KHTML, like Gecko) Chrome/{major_version}.0.0.0 Safari/537.36"
     )
 }
 
@@ -633,25 +625,6 @@ fn perturb_noise() -> NoiseSpec {
         mode: NoiseMode::Perturb,
         amplitude: NoiseAmplitude::HardwareNatural,
     }
-}
-
-fn common_webgl_extensions() -> Vec<String> {
-    [
-        "ANGLE_instanced_arrays",
-        "EXT_blend_minmax",
-        "EXT_color_buffer_float",
-        "EXT_float_blend",
-        "EXT_texture_filter_anisotropic",
-        "OES_element_index_uint",
-        "OES_standard_derivatives",
-        "OES_texture_float",
-        "WEBGL_compressed_texture_s3tc",
-        "WEBGL_debug_renderer_info",
-        "WEBGL_lose_context",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
 }
 
 fn rarity_from_factors(factors: &[(&str, u32, u32)]) -> RarityConfig {

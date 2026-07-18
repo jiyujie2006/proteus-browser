@@ -271,9 +271,9 @@ if [ ! -f "$NETWORK_TIME_TEST" ] || [ -L "$NETWORK_TIME_TEST" ] || \
   echo "ERROR: native components_unittests is missing or unsafe" >&2
   exit 1
 fi
-echo "==> verifying the Network Time feature disable/explicit-enable paths"
+echo "==> verifying the Network Time default-off and explicit override paths"
 "$NETWORK_TIME_TEST" \
-  --gtest_filter=NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled \
+  --gtest_filter=NetworkTimeFeatureDefaultTest.QueryingIsDisabledByDefault:NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled \
   --test-launcher-bot-mode
 
 for app in "$X64_APP" "$ARM64_APP"; do

@@ -9,7 +9,10 @@ import {
 import { loadReference } from './reference.mjs';
 import { normalize } from './normalize.mjs';
 import { score } from './score.mjs';
-import { RULES_VERSION } from './rules.mjs';
+import {
+  hasStructuredSixContextEvidence,
+  RULES_VERSION,
+} from './rules.mjs';
 import { validateNetworkTimeAudit } from './network-time-audit.mjs';
 
 export function buildArtifactBaselineReport({
@@ -28,8 +31,25 @@ export function buildArtifactBaselineReport({
   if (!observation || typeof observation !== 'object' || Array.isArray(observation)) {
     throw new TypeError('artifact baseline requires a collected observation object');
   }
+  if (!hasStructuredSixContextEvidence(observation)) {
+    throw new TypeError(
+      'artifact baseline requires structured evidence for all six execution contexts',
+    );
+  }
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
     throw new TypeError('artifact baseline context must be an object');
+  }
+  if (typeof context.requestUserAgent !== 'string'
+      || context.requestUserAgent.length === 0) {
+    throw new TypeError(
+      'artifact baseline requires the observed HTTP User-Agent',
+    );
+  }
+  if (typeof observation.locale?.acceptLanguage !== 'string'
+      || observation.locale.acceptLanguage.length === 0) {
+    throw new TypeError(
+      'artifact baseline requires the observed HTTP Accept-Language',
+    );
   }
   if (!probe || typeof probe !== 'object' || Array.isArray(probe)) {
     throw new TypeError('artifact baseline requires a controlled probe binding');
@@ -71,6 +91,7 @@ export function buildArtifactBaselineReport({
       scope: 'artifact-runtime',
       rulesVersion: RULES_VERSION,
       completed: true,
+      coverage: scored.coverage,
       coverageComplete: scored.coverage?.complete === true,
       verdict: scored.verdict,
       gated: scored.gated,

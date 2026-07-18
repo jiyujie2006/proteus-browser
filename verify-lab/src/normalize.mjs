@@ -12,7 +12,11 @@
 
 /** Detect which input shape we were handed. */
 function looksLikeProfileConfig(input) {
-  return input && input.schemaVersion && input.persona && input.engine;
+  // A malformed config must not become a tolerant runtime observation merely
+  // because an attacker removed schemaVersion or another required root field.
+  // Explicit persona+engine is the stable discriminator; runtime evidence, when
+  // present, is still recognized by hasRuntimeObservation() below.
+  return input && input.persona && input.engine;
 }
 
 /** A fixture/config may carry out-of-band runtime observations alongside config fields. */
@@ -36,6 +40,17 @@ function fromProfileConfig(cfg, context) {
     media: cfg.media,
     performance: cfg.performance,
     locale: cfg.locale,
+    noise: cfg.noise,
+    rarity: cfg.rarity,
+    provenance: cfg.provenance,
+    schemaVersion: cfg.schemaVersion,
+    configContract: {
+      presentFields: Object.keys(cfg),
+      profileId: cfg.profileId,
+      seed: cfg.seed,
+      network: cfg.network,
+      signature: cfg.signature,
+    },
     // traces/network/automation are only observable at runtime; a static config
     // can't fail them, so they stay absent (rules return `na`).
     traces: cfg.traces,
@@ -50,7 +65,7 @@ function fromProbeCollection(raw, context) {
   const nav = raw.navigator || {};
   return {
     scope: 'runtime',
-    engine: raw.engine || inferEngine(nav.userAgent),
+    engine: raw.engine || inferEngine(nav.userAgent, raw.clientHints),
     persona: raw.persona || inferPersona(nav, raw.screen),
     navigator: {
       userAgent: nav.userAgent,
@@ -74,8 +89,25 @@ function fromProbeCollection(raw, context) {
   };
 }
 
-/** Best-effort engine inference from a UA string (probe pages may not label it). */
-function inferEngine(ua = '') {
+const CLIENT_HINT_BRAND_ALIASES = Object.freeze({
+  Chrome: ['Google Chrome', 'Chrome', 'Chromium'],
+  Edge: ['Microsoft Edge', 'Edge', 'Microsoft Edge WebView2'],
+  Opera: ['Opera', 'Opera GX'],
+});
+
+function clientHintFullVersion(clientHints, brand) {
+  if (!Array.isArray(clientHints?.fullVersionList)) return undefined;
+  const aliases = CLIENT_HINT_BRAND_ALIASES[brand];
+  if (!aliases) return undefined;
+  const wanted = new Set(aliases.map((value) => value.toLowerCase()));
+  const match = clientHints.fullVersionList.find((entry) =>
+    wanted.has(String(entry?.brand || '').toLowerCase())
+      && /^\d+(?:\.\d+){1,3}$/u.test(String(entry?.version || '')));
+  return match ? String(match.version) : undefined;
+}
+
+/** Best-effort engine inference from UA + UA-CH (probe pages may not label it). */
+function inferEngine(ua = '', clientHints) {
   const u = ua.toLowerCase();
   let brand = 'Chrome', family = 'chromium';
   if (u.includes('firefox')) { brand = 'Firefox'; family = 'firefox'; }
@@ -90,7 +122,17 @@ function inferEngine(ua = '') {
     : 'Chrome';
   const m = ua.match(new RegExp(`${versionToken}/(\\d+)\\.(\\d+)\\.?([\\d]+)?\\.?([\\d]+)?`, 'i'));
   const majorVersion = m ? Number(m[1]) : undefined;
-  const fullVersion = m ? m.slice(1).filter(Boolean).join('.') : undefined;
+  const uaVersion = m ? m.slice(1).filter(Boolean).join('.') : undefined;
+  const uaIsReduced = m
+    && Number(m[2]) === 0
+    && Number(m[3] || 0) === 0
+    && Number(m[4] || 0) === 0;
+  // Chromium deliberately reduces the UA token to <major>.0.0.0. Preserve a
+  // genuinely full UA when one exists, but recover the real full version from
+  // the matching branded UA-CH entry for stock reduced-UA observations.
+  const fullVersion = uaIsReduced
+    ? clientHintFullVersion(clientHints, brand) || uaVersion
+    : uaVersion;
   return { brand, family, majorVersion, fullVersion };
 }
 

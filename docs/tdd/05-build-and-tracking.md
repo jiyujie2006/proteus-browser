@@ -132,6 +132,10 @@ public source.
 - A separate pipeline validates a candidate dataset (schema, licensing of any
   bundled fonts, sanity of distributions), signs it, and publishes it; the Manager
   pulls signed dataset updates.
+- The **initial** dataset is the harder case: the cold-start bootstrap workflow
+  (tdd/02 §7a) has named public sources and an acceptance bar (reproduce source
+  marginals, preserve joint structure, pass the fleet de-correlation probe) that
+  this pipeline enforces before a first dataset is signed.
 - Staleness is a tracked correctness issue (stale dataset → V2 rarity), with its
   own cadence and alerting.
 
@@ -154,12 +158,17 @@ public source.
 2. Builds succeed on all platforms.
 3. **Verification-lab suite green** (V1–V5 probes) — no regressions vs. last
    release (Principle VII).
+3b. **Fleet de-correlation green** (V2b): the red-team cohort classifier (tdd/06
+   §5a) cannot separate a batch of generated profiles from a real hold-out above
+   the configured margin. A fleet that becomes separable blocks release like any
+   other regression.
 4. License/SBOM check passes (no non-redistributable artifact snuck in).
 5. Reproducibility check passes (independent rebuild matches hash).
 6. Provenance/signature generated.
 
-A red on 3 blocks release even if everything compiles — effectiveness is the
-product.
+A red on 3 or 3b blocks release even if everything compiles — effectiveness is
+the product, and a detectable *fleet* is an effectiveness failure even when every
+single profile looks fine.
 
 ## 9. Interaction summary
 

@@ -305,6 +305,8 @@ function installPolicyCheckout(repo) {
     'engine-chromium/tracking-bot/pipeline.mjs',
     'verify-lab/data/reference.json',
     'verify-lab/probe-page/collect.js',
+    'verify-lab/probe-page/context-frame.html',
+    'verify-lab/probe-page/context-worker.js',
     'verify-lab/probe-page/headless.html',
     'verify-lab/src/controlled-probe.mjs',
     'verify-lab/src/network-time-audit.mjs',
@@ -567,6 +569,15 @@ function createBuildRecord({
       buildContract,
     }),
   );
+  const liveObservation = attachStructuredCrossContext(JSON.parse(readFileSync(
+    join(
+      REPO,
+      'verify-lab',
+      'fixtures',
+      'bad-v5-automation-tells.json',
+    ),
+    'utf8',
+  )));
   const record = {
     runId,
     runAttempt: 1,
@@ -592,6 +603,9 @@ function createBuildRecord({
       `${relativeRoot}/live-report.json`,
       buildArtifactBaselineReport({
         artifactPath: entrypoint,
+        context: {
+          requestUserAgent: liveObservation.navigator.userAgent,
+        },
         executionIsolation: M0_EXTERNAL_EXECUTION_ISOLATION,
         networkTimeAudit: auditNetworkTimeNetLog({
           events: [{
@@ -600,15 +614,7 @@ function createBuildRecord({
             },
           }],
         }),
-        observation: JSON.parse(readFileSync(
-          join(
-            REPO,
-            'verify-lab',
-            'fixtures',
-            'bad-v5-automation-tells.json',
-          ),
-          'utf8',
-        )),
+        observation: liveObservation,
         platform,
         probe: buildControlledProbeBinding(join(repo, 'verify-lab')),
       }),
@@ -1042,6 +1048,48 @@ function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+function attachStructuredCrossContext(observation) {
+  const requiredContexts = [
+    'main',
+    'same-origin-iframe',
+    'cross-origin-iframe',
+    'dedicated-worker',
+    'shared-worker',
+    'service-worker',
+  ];
+  const mainValues = {
+    navigator: {
+      userAgent: observation.navigator.userAgent,
+      platform: observation.navigator.platform,
+      languages: structuredClone(observation.navigator.languages),
+      hardwareConcurrency: observation.navigator.hardwareConcurrency,
+      deviceMemory: observation.navigator.deviceMemory,
+      vendor: observation.navigator.vendor,
+    },
+    locale: {
+      timezone: observation.locale.timezone,
+      intlLocale: observation.locale.intlLocale,
+    },
+    clientHints: structuredClone(observation.clientHints),
+    gpu: {
+      webglVendor: observation.gpu.webglVendor,
+      webglRenderer: observation.gpu.webglRenderer,
+    },
+  };
+  observation.traces.crossContext = {
+    schemaVersion: '1.0.0',
+    requiredContexts,
+    contexts: Object.fromEntries(requiredContexts.map((context) => {
+      const values = structuredClone(mainValues);
+      if (context.endsWith('worker')) delete values.navigator.vendor;
+      return [context, { status: 'ok', values }];
+    })),
+    mismatches: [],
+    complete: true,
+  };
+  return observation;
+}
+
 function signReceipt(receipt, privateKey) {
   receipt.signature = sign(
     null,
@@ -1071,6 +1119,8 @@ function goodAttestationVerifier(invocations, mutate = null) {
         mediaType: 'application/vnd.dev.sigstore.bundle+json;version=0.3',
       },
       verificationResult: {
+        mediaType:
+          'application/vnd.dev.sigstore.verificationresult+json;version=0.1',
         signature: {
           certificate: {
             issuer: 'https://token.actions.githubusercontent.com',
@@ -1110,9 +1160,25 @@ function goodAttestationVerifier(invocations, mutate = null) {
               input.buildFacts.repository.visibility,
           },
         },
+        verifiedIdentity: {
+          subjectAlternativeName: {
+            subjectAlternativeName: '',
+            regexp:
+              `^https://github.com/${input.buildFacts.repository.nameWithOwner}`
+              + `/${input.buildFacts.workflow}`,
+          },
+          issuer: {
+            issuer: '',
+            regexp: '.*',
+          },
+          ...(input.invocation.args.includes('--deny-self-hosted-runners')
+            ? { runnerEnvironment: 'github-hosted' }
+            : {}),
+        },
         verifiedTimestamps: [{
-          type: 'transparency-log',
-          timestamp: '2026-07-18T00:20:00.000Z',
+          type: 'Tlog',
+          uri: 'https://rekor.sigstore.dev',
+          timestamp: '2026-07-18T00:20:00Z',
         }],
         statement: structuredClone(input.expectedStatement),
       },
@@ -1616,6 +1682,49 @@ check('verified certificate identity must match the trusted workflow', (fixture)
   });
 });
 
+check('pinned gh verification-result media type is mandatory', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      result[0].verificationResult.mediaType =
+        'application/vnd.dev.sigstore.verificationresult+json;version=9.9';
+    }
+  });
+  expectFailure(fixture, /unsupported Sigstore media type/, {
+    attestationVerifier: verifier,
+  });
+});
+
+check('gh matched identity must equal the pinned signer policy', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      result[0].verificationResult.verifiedIdentity
+        .subjectAlternativeName.regexp =
+          '^https://github.com/example/evil/.github/workflows/evil.yml';
+    }
+  });
+  expectFailure(fixture, /verified identity does not match the pinned gh policy/, {
+    attestationVerifier: verifier,
+  });
+});
+
+check('gh matched identity must preserve hosted-runner enforcement', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      result[0].verificationResult.verifiedIdentity.runnerEnvironment =
+        'self-hosted';
+    }
+  });
+  expectFailure(fixture, /verified identity does not match the pinned gh policy/, {
+    attestationVerifier: verifier,
+  });
+});
+
 check('verified timestamp evidence is mandatory', (fixture) => {
   const verifier = goodAttestationVerifier([], (result, input) => {
     if (input.type === 'build'
@@ -1625,6 +1734,46 @@ check('verified timestamp evidence is mandatory', (fixture) => {
     }
   });
   expectFailure(fixture, /verified timestamps/, {
+    attestationVerifier: verifier,
+  });
+});
+
+check('verified timestamp schema requires its timestamp field', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      delete result[0].verificationResult.verifiedTimestamps[0].timestamp;
+    }
+  });
+  expectFailure(fixture, /verified timestamp 0 must contain exactly/, {
+    attestationVerifier: verifier,
+  });
+});
+
+check('verified timestamp schema rejects unknown fields', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      result[0].verificationResult.verifiedTimestamps[0].untrusted = true;
+    }
+  });
+  expectFailure(fixture, /verified timestamp 0 must contain exactly/, {
+    attestationVerifier: verifier,
+  });
+});
+
+check('verified timestamp URI must be a parseable HTTPS URL', (fixture) => {
+  const verifier = goodAttestationVerifier([], (result, input) => {
+    if (input.type === 'build'
+        && input.buildFacts.platform === 'windows-x64'
+        && input.buildFacts.slot === 'A') {
+      result[0].verificationResult.verifiedTimestamps[0].uri =
+        'javascript:untrusted';
+    }
+  });
+  expectFailure(fixture, /verified timestamp 0 URI must be a valid HTTPS URL/, {
     attestationVerifier: verifier,
   });
 });
@@ -2030,6 +2179,49 @@ check('live V1-V5 summaries are recomputed from observations', (fixture) => {
     'utf8',
   ));
   report.suites[0].aggregate = 1;
+  rewriteDescriptor(fixture, record.liveReport, report);
+  expectFailure(
+    fixture,
+    /verification report is not a complete artifact-driven baseline report/,
+  );
+});
+
+check('live report coverage cannot be forged by a rebound summary', (fixture) => {
+  const record = fixture.records.get('windows-x64/A');
+  const report = JSON.parse(readFileSync(
+    absoluteArtifact(fixture, record.liveReport),
+    'utf8',
+  ));
+  report.suites[0].coverage.measured += 1;
+  rewriteDescriptor(fixture, record.liveReport, report);
+  expectFailure(
+    fixture,
+    /verification report is not a complete artifact-driven baseline report/,
+  );
+});
+
+check('rebound live report cannot omit HTTP request-header bindings', (fixture) => {
+  const record = fixture.records.get('windows-x64/A');
+  const report = JSON.parse(readFileSync(
+    absoluteArtifact(fixture, record.liveReport),
+    'utf8',
+  ));
+  delete report.context.requestUserAgent;
+  rewriteDescriptor(fixture, record.liveReport, report);
+  expectFailure(
+    fixture,
+    /verification report is not a complete artifact-driven baseline report/,
+  );
+});
+
+check('hard live report cannot use the legacy cross-context counter', (fixture) => {
+  const record = fixture.records.get('windows-x64/A');
+  const report = JSON.parse(readFileSync(
+    absoluteArtifact(fixture, record.liveReport),
+    'utf8',
+  ));
+  delete report.observation.traces.crossContext;
+  report.observation.traces.crossContextMismatches = 0;
   rewriteDescriptor(fixture, record.liveReport, report);
   expectFailure(
     fixture,

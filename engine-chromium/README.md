@@ -50,11 +50,12 @@ integration or a successful Chromium build.
 - Reproducibility and SLSA provenance are **designed in from the first build**
   (Principle VI), not bolted on — see `scripts/provenance.mjs` and `build/args.gn`.
 - The VERIFY step calls the artifact-driven verification lab and binds its
-  report to the packaged entrypoint. Each platform build also runs Chromium's
-  exact default-disabled Network Time unit test; the live report gracefully
-  closes Chromium, reads one stable bounded NetLog, and fails if the default
-  Google time endpoint appears. That integration still has to be exercised by
-  the first real six-build run.
+  report to the packaged entrypoint. Each platform build also runs the
+  Proteus-authored assertion on the compiled Network Time feature default plus
+  Chromium's upstream explicit disable/enable regression; the live report
+  gracefully closes Chromium, reads one stable bounded NetLog, and fails if the
+  default Google time endpoint appears. That integration still has to be
+  exercised by the first real six-build run.
 - Machine live-drive reports require a caller-claimed external disposable
   runner and label local process cleanup as best-effort. The hard exit still
   needs builder-attested VM/container/job containment; a CLI flag is not proof.

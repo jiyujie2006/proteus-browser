@@ -32,4 +32,4 @@ pub const GENERATOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Version of the semantic rule contract implemented by this crate. The shared
 /// dataset and the independent Node catalog must carry the same value.
-pub const RULES_VERSION: &str = "1.0.0";
+pub const RULES_VERSION: &str = "1.1.0";

@@ -75,20 +75,29 @@ actually do the network layer. Match their UX, beat their core.
   the open.
 - **ungoogled-chromium**: the reference for de-Googling and a clean, rebase-able
   Chromium patch methodology.
+- **Apify browserforge / fingerprint-suite**: prior art for *distribution-driven*
+  fingerprint generation — a Bayesian network sampled from real fingerprints to
+  produce plausible header/fingerprint combinations. We explicitly build on this
+  idea rather than claim to have invented distribution sampling (see below).
 
 **Where they lose (as complete *products*)**
 - Single-engine, not a unified dual-engine product.
 - Little or no *product* layer: no polished profile/proxy/team manager, no
   importers, no integrated verification lab, no zero-knowledge sync.
 - Consistency is left largely to the user; no rarity scoring or persona model.
+- Distribution generators (browserforge) score plausibility internally but don't
+  expose a **blend-in score** to the user, don't model **coherence as a
+  distribution** (the "too clean" tail), and don't treat the **fleet/cohort
+  signature** (V2b) as a measured adversarial target.
 - Network-layer alignment is inherited (good) but not a managed, proxy-aware
   system with leak guards and provider integration.
 
 **Proteus's stance:** *build on them, don't replace them.* We integrate and
 upstream-contribute to Camoufox for the Firefox engine rather than reinventing
-it, take the ungoogled-chromium patch methodology as prior art, and add the
-consistency engine, network system, product, verification lab, and sustainability
-model around them. This is collaboration, not competition. See
+it, take the ungoogled-chromium patch methodology as prior art, take
+browserforge's distribution-sampling idea as prior art, and add the consistency
+engine, fleet de-correlation, network system, product, verification lab, and
+sustainability model around them. This is collaboration, not competition. See
 [third-party licensing](10-third-party-licensing.md) and
 [CONTRIBUTING.md](../CONTRIBUTING.md). No upstream engine checkout, binary, or
 copied upstream patch payload is present in the current pre-alpha repository.
@@ -114,8 +123,10 @@ dashboard, RPA runtime, or production build provenance.
 | Open source | No | No | Yes | **Yes (Apache-2.0)** |
 | Local-first data ownership | No (cloud) | Mostly no | Yes | **Yes + ZK sync** |
 | Consistency/persona engine | Partial, opaque | Weak (random) | Manual | **Explicit, rule-checked** |
-| Rarity / blend-in scoring | No | No | No | **Yes (novel)** |
-| Network-layer (TLS/H2) alignment | Partial | Rare | Inherited | **Managed, tunnel-not-MITM** |
+| Real-distribution sampling | Curated pools | Weak | Yes (browserforge) | **Yes + coherence-as-distribution** |
+| Blend-in score exposed to user | No | No | No | **Yes (uncommon)** |
+| Fleet/cohort de-correlation (V2b) | Opaque | No | No | **Yes, measured (red-team)** |
+| Network-layer (TLS/H2/ECH) alignment | Partial | Rare | Inherited | **Managed, tunnel-not-MITM** |
 | Anti-CDP / stealth automation | Yes (paywalled) | Yes (limited) | Yes | **Yes, first-class** |
 | Verification lab built-in | No | No | No | **Yes + public dashboard** |
 | Reproducible build + provenance | No | No | Partial | **Yes (SLSA)** |
@@ -138,6 +149,32 @@ about the current repository state.
   open-source engine work, now dual-engine with a consistency engine, a managed
   network system, a real product around it, and a sustainability model — and we
   contribute back."
+- **vs. browserforge/fingerprint-suite (distribution generators):** "You pioneered
+  sampling fingerprints from real distributions; we take that further — expose the
+  blend-in score to the user, model coherence *as a distribution* so profiles
+  aren't tell-tale 'too clean,' treat the whole fleet's cohort signature as a
+  measured adversarial target, and drive a real native engine with it end to end."
+
+## What is genuinely differentiated (stated honestly)
+
+To keep Principle IV intact, we are precise about what is *new* versus what is
+*better-integrated*. Distribution-driven generation, native engine patching, and
+de-Googling methodology all have strong prior art we build on. The combination we
+have not seen assembled elsewhere — and treat as the real wedge — is:
+
+1. **Blend-in score surfaced to the user**, not just used internally.
+2. **Coherence modeled as a distribution** (the "too clean" tail, tdd/02 §6a).
+3. **Fleet/cohort de-correlation as a *measured* commitment** via an adversarial
+   red-team classifier (tdd/02 §9, tdd/06 §5a, adr/0007) — attacking V2b, the
+   vector that historically kills popular stealth tools.
+4. **Four-layer alignment via tunnel-not-MITM**, including ECH and TLS-in-TLS
+   honesty (tdd/03 §6a–6b).
+5. **A public, continuous regression dashboard + reproducible builds** — a trust
+   posture closed tools structurally cannot match.
+
+Any one of these exists somewhere in isolation; the *system* that ties them to a
+native dual engine with an honest, verifiable effectiveness record is the part we
+claim.
 
 ## The risk we must respect
 

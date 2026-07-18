@@ -79,7 +79,8 @@ jobs:
           test "${facts[3]}" = "completed"
           test "${facts[4]}" = "success"
           case "${facts[5]}" in
-            .github/workflows/m0-aggregate.yml*) ;;
+            .github/workflows/m0-aggregate.yml | \
+            .github/workflows/m0-aggregate.yml@refs/heads/main) ;;
             *) exit 1 ;;
           esac
           [[ "${facts[6]}" =~ ^[1-9][0-9]{0,8}$ ]]

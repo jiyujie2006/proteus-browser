@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>proteus-context-frame</title>
+</head>
+<body>
+<script src="./collect.js"></script>
+<script>
+  (function () {
+    'use strict';
+
+    const requestId = decodeURIComponent(location.hash.slice(1));
+    let parentOrigin = null;
+    try {
+      parentOrigin = new URL(document.referrer).origin;
+    } catch (_) {}
+
+    if (!requestId || !parentOrigin || window.parent === window) return;
+
+    window.addEventListener('message', async (event) => {
+      if (event.source !== window.parent
+          || event.origin !== parentOrigin
+          || event.data?.type !== 'proteus-context-collect'
+          || event.data?.requestId !== requestId
+          || !event.ports?.[0]) {
+        return;
+      }
+      const port = event.ports[0];
+      try {
+        const values = await window.ProteusCollect.collectContextValues();
+        port.postMessage({
+          type: 'proteus-context-result',
+          requestId,
+          ok: true,
+          values,
+        });
+      } catch (error) {
+        port.postMessage({
+          type: 'proteus-context-result',
+          requestId,
+          ok: false,
+          error: String(error?.message ?? error ?? 'unknown error')
+            .replace(/[\r\n\t]+/g, ' ')
+            .slice(0, 240),
+        });
+      } finally {
+        port.close();
+      }
+    });
+
+    window.parent.postMessage({
+      type: 'proteus-context-ready',
+      requestId,
+    }, parentOrigin);
+  })();
+</script>
+</body>
+</html>

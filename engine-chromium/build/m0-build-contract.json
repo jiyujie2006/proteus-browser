@@ -11,7 +11,7 @@
   },
   "patches": {
     "profile": "m0-layer0-v1",
-    "activeSeriesSha256": "6e2ea0cb355b7330c0f854a90a87ef6d586c1f420ba62eb7802360d9050c9c84"
+    "activeSeriesSha256": "bfeae5c48ee6a93544c6145317b12ff5cff4ba3540f45e971a4157c256c2aced"
   },
   "gn": {
     "template": "engine-chromium/build/args.gn",

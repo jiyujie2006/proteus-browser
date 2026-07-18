@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 import { CdpPipeClient } from '../src/cdp-pipe.mjs';
 import { closeBrowserGracefully } from '../src/browser-close.mjs';
@@ -21,10 +22,10 @@ export async function runLiveHarnessSecurityTests(assert) {
     'machine probe reports the exact frozen file bundle it serves',
   );
 
-  function request(method, url) {
+  function request(method, url, headers = {}) {
     const result = { body: undefined, headers: null, status: null };
     probe.handle(
-      { method, url },
+      { headers, method, url },
       {
         end(body) { result.body = body; },
         writeHead(status, headers) {
@@ -35,7 +36,10 @@ export async function runLiveHarnessSecurityTests(assert) {
     );
     return result;
   }
-  const entry = request('GET', '/probe-page/headless.html');
+  const entry = request('GET', '/probe-page/headless.html', {
+    'accept-language': 'en-US,en;q=0.9',
+    'user-agent': 'Proteus controlled fixture',
+  });
   assert(
     entry.status === 200
       && Buffer.from(entry.body).equals(
@@ -43,17 +47,137 @@ export async function runLiveHarnessSecurityTests(assert) {
       ),
     'controlled server serves the bound headless entry bytes',
   );
+  const entryHeaders = probe.entryRequestHeaders();
+  assert(
+    entryHeaders.acceptLanguage === 'en-US,en;q=0.9'
+      && entryHeaders.userAgent === 'Proteus controlled fixture',
+    'controlled server binds the entry request language and user-agent headers',
+  );
   assert(
     request('GET', '/probe-page/headless.html?unbound=1').status === 404,
     'controlled server rejects unbound query variants',
   );
+  for (const name of ['context-frame.html', 'context-worker.js']) {
+    const resource = request('GET', `/probe-page/${name}`);
+    assert(
+      resource.status === 200
+        && Buffer.from(resource.body).equals(
+          readFileSync(join(ROOT, 'probe-page', name)),
+        ),
+      `controlled server serves the bound ${name} bytes`,
+    );
+  }
   assert(
     request('GET', '/data/reference.json').status === 404,
-    'controlled server exposes no resources outside the two-file probe bundle',
+    'controlled server exposes no resources outside the four-file probe bundle',
   );
   assert(
     request('POST', '/probe-page/headless.html').status === 405,
     'controlled server rejects state-changing HTTP methods',
+  );
+
+  let resolveLateRegistration;
+  let registrationCalls = 0;
+  let unregisterCalls = 0;
+  let messageChannelCalls = 0;
+  let workerPostCalls = 0;
+  const lateRegistration = new Promise((resolve) => {
+    resolveLateRegistration = resolve;
+  });
+  class MockNavigator {}
+  for (const property of [
+    'userAgent',
+    'platform',
+    'languages',
+    'hardwareConcurrency',
+  ]) {
+    Object.defineProperty(MockNavigator.prototype, property, {
+      configurable: true,
+      enumerable: true,
+      get() { return undefined; },
+    });
+  }
+  class MockScreen {}
+  Object.defineProperty(MockScreen.prototype, 'width', {
+    configurable: true,
+    enumerable: true,
+    get() { return undefined; },
+  });
+  class MockCanvas {}
+  MockCanvas.prototype.toDataURL = function toDataURL() {};
+  class MockWebGl {}
+  MockWebGl.prototype.getParameter = function getParameter() {};
+  class MockMessageChannel {
+    constructor() {
+      messageChannelCalls += 1;
+      this.port1 = {
+        close() {},
+        start() {},
+      };
+      this.port2 = {};
+    }
+  }
+  const collectorSandbox = {
+    HTMLCanvasElement: MockCanvas,
+    MessageChannel: MockMessageChannel,
+    Navigator: MockNavigator,
+    Screen: MockScreen,
+    WebGLRenderingContext: MockWebGl,
+    clearTimeout: globalThis.clearTimeout,
+    crypto: {
+      getRandomValues(values) {
+        values.fill(1);
+        return values;
+      },
+    },
+    navigator: {
+      hardwareConcurrency: 8,
+      languages: ['en-US', 'en'],
+      platform: 'Linux x86_64',
+      serviceWorker: {
+        register() {
+          registrationCalls += 1;
+          return lateRegistration;
+        },
+      },
+      userAgent: 'Proteus lifecycle fixture',
+      vendor: 'Google Inc.',
+    },
+    setTimeout(callback) {
+      return globalThis.setTimeout(callback, 0);
+    },
+  };
+  collectorSandbox.self = collectorSandbox;
+  runInNewContext(
+    readFileSync(join(ROOT, 'probe-page', 'collect.js'), 'utf8'),
+    collectorSandbox,
+    { filename: 'probe-page/collect.js' },
+  );
+  const timedOutCollection = await collectorSandbox.ProteusCollect.collect();
+  assert(
+    timedOutCollection.traces.crossContext.contexts['service-worker'].status
+      === 'timeout',
+    'service-worker lifecycle fixture reaches the bounded timeout',
+  );
+  resolveLateRegistration({
+    active: {
+      postMessage() {
+        workerPostCalls += 1;
+      },
+      state: 'activated',
+    },
+    unregister() {
+      unregisterCalls += 1;
+      return Promise.resolve(true);
+    },
+  });
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 0));
+  assert(
+    registrationCalls === 1
+      && unregisterCalls === 1
+      && messageChannelCalls === 0
+      && workerPostCalls === 0,
+    'late service-worker setup is immediately unregistered and allocates no post-timeout ports',
   );
 
   const chromeOutput = new PassThrough();

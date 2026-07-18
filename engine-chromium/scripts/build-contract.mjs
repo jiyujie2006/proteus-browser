@@ -364,6 +364,21 @@ export function validateM0BuildContract(
     ['builder', 'aggregate', 'hardGate'],
     'trust.workflows',
   );
+  exactString(
+    trustContract.workflows.builder,
+    '.github/workflows/m0-builder.yml',
+    'trust.workflows.builder',
+  );
+  exactString(
+    trustContract.workflows.aggregate,
+    '.github/workflows/m0-aggregate.yml',
+    'trust.workflows.aggregate',
+  );
+  exactString(
+    trustContract.workflows.hardGate,
+    '.github/workflows/m0-hard-gate.yml',
+    'trust.workflows.hardGate',
+  );
   exactKeys(
     trustContract.predicateTypes,
     ['provenance', 'sbom', 'build', 'aggregate'],

@@ -156,8 +156,17 @@ check('all five threat vectors V1–V5 are covered by rules', () => {
 check('probe page + live-drive harness exist (runtime path)', () => {
   const page = existsSync(join(REPO, 'verify-lab', 'probe-page', 'index.html'));
   const collect = existsSync(join(REPO, 'verify-lab', 'probe-page', 'collect.js'));
+  const contextFrame = existsSync(
+    join(REPO, 'verify-lab', 'probe-page', 'context-frame.html'),
+  );
+  const contextWorker = existsSync(
+    join(REPO, 'verify-lab', 'probe-page', 'context-worker.js'),
+  );
   const drive = existsSync(join(REPO, 'verify-lab', 'tools', 'drive-chrome.mjs'));
-  return { ok: page && collect && drive, detail: 'index.html + collect.js + drive-chrome.mjs' };
+  return {
+    ok: page && collect && contextFrame && contextWorker && drive,
+    detail: 'collector + bound iframe/worker probes + drive-chrome.mjs',
+  };
 });
 
 // ---- Deliverable 2: reproducible-build / tracking pipeline ------------------

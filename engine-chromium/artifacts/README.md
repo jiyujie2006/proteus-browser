@@ -45,7 +45,7 @@ baseline's fingerprint inconsistencies is M1, and V4 network parity is M2.
 The report carries the collected observation and scoring context; verification
 re-runs the current versioned Node normalizer/rule catalog and exact-compares
 coverage, vectors, aggregate, verdict, gate state, and inconsistencies.
-It also binds the exact two-file controlled probe bundle. The machine producer
+It also binds the exact four-file controlled probe bundle. The machine producer
 launches the declared executable over Chromium's process-bound debugging pipe,
 self-hosts those frozen probe bytes on an OS-assigned IPv4 loopback port, and
 checks the executable hash/stat before and after collection.

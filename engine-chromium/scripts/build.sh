@@ -63,9 +63,9 @@ if [ ! -f "$NETWORK_TIME_TEST" ] || [ -L "$NETWORK_TIME_TEST" ] || \
   echo "ERROR: components_unittests was not produced as an ordinary executable" >&2
   exit 1
 fi
-echo "==> verifying the Network Time feature disable/explicit-enable paths"
+echo "==> verifying the Network Time default-off and explicit override paths"
 "$NETWORK_TIME_TEST" \
-  --gtest_filter=NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled \
+  --gtest_filter=NetworkTimeFeatureDefaultTest.QueryingIsDisabledByDefault:NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled \
   --test-launcher-bot-mode
 
 echo "==> build complete. Artifact under $SRC_DIR/$OUT_DIR"

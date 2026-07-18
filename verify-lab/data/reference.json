@@ -1,7 +1,7 @@
 {
   "_comment": "Reference data for coherence rules and M1A deterministic profile generation. This is the machine-readable backbone shared by the fingerprint engine and verification lab. Values are curated seed facts, not population telemetry; the full distribution-backed dataset arrives in M4.",
-  "_version": "0.2.0-m1a-seed",
-  "_rulesVersion": "1.0.0",
+  "_version": "0.3.0",
+  "_rulesVersion": "1.1.0",
 
   "platformByOs": {
     "Windows": ["Win32"],
@@ -74,9 +74,9 @@
   },
 
   "hardwareByClass": {
-    "_comment": "Plausible (hardwareConcurrency, deviceMemory-GiB) pairs by class (rule R-HW-PAIR). deviceMemory is a coarse Chrome-reported bucket capped at 8. The tell is an implausible pair like 32 cores / 0.25 GiB.",
-    "desktop": { "coresMin": 4, "coresMax": 32, "memoryValues": [4, 8], "minMemoryForCores": { "16": 8, "24": 8, "32": 8 } },
-    "laptop": { "coresMin": 4, "coresMax": 16, "memoryValues": [4, 8], "minMemoryForCores": { "12": 8, "16": 8 } }
+    "_comment": "Plausible (hardwareConcurrency, deviceMemory-GiB) pairs by class (rule R-HW-PAIR). Since Chromium 150, non-Android deviceMemory uses the coarse buckets [2,4,8,16,32] rather than the historical 8-GiB cap. The tell is an implausible joint pair, not a now-valid 16/32-GiB bucket.",
+    "desktop": { "coresMin": 4, "coresMax": 32, "memoryValues": [2, 4, 8, 16, 32], "minMemoryForCores": { "16": 8, "24": 16, "32": 16 } },
+    "laptop": { "coresMin": 4, "coresMax": 16, "memoryValues": [2, 4, 8, 16, 32], "minMemoryForCores": { "12": 8, "16": 8 } }
   },
 
   "localeByRegion": {
@@ -138,10 +138,18 @@
       "fullVersion": "150.0.7871.124",
       "weight": 100,
       "platformVersions": {
-        "Windows": "15.0.0",
-        "macOS": "15.0.0",
-        "Linux": "0.0.0"
-      }
+        "Windows": "15.0.0"
+      },
+      "clientHintBrands": [
+        { "brand": "Not;A=Brand", "version": "8" },
+        { "brand": "Chromium", "version": "150" },
+        { "brand": "Google Chrome", "version": "150" }
+      ],
+      "clientHintFullVersionList": [
+        { "brand": "Not;A=Brand", "version": "8.0.0.0" },
+        { "brand": "Chromium", "version": "150.0.7871.124" },
+        { "brand": "Google Chrome", "version": "150.0.7871.124" }
+      ]
     }
   ],
 
@@ -150,8 +158,22 @@
     "Windows": [
       {
         "family": "Intel",
+        "allowedDeviceClasses": ["desktop", "laptop"],
         "webglVendor": "Google Inc. (Intel)",
         "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webglExtensions": [
+          "ANGLE_instanced_arrays",
+          "EXT_blend_minmax",
+          "EXT_color_buffer_float",
+          "EXT_float_blend",
+          "EXT_texture_filter_anisotropic",
+          "OES_element_index_uint",
+          "OES_standard_derivatives",
+          "OES_texture_float",
+          "WEBGL_compressed_texture_s3tc",
+          "WEBGL_debug_renderer_info",
+          "WEBGL_lose_context"
+        ],
         "webgpuAdapter": {
           "family": "Intel",
           "vendor": "intel",
@@ -163,8 +185,22 @@
       },
       {
         "family": "NVIDIA",
+        "allowedDeviceClasses": ["desktop"],
         "webglVendor": "Google Inc. (NVIDIA)",
         "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webglExtensions": [
+          "ANGLE_instanced_arrays",
+          "EXT_blend_minmax",
+          "EXT_color_buffer_float",
+          "EXT_float_blend",
+          "EXT_texture_filter_anisotropic",
+          "OES_element_index_uint",
+          "OES_standard_derivatives",
+          "OES_texture_float",
+          "WEBGL_compressed_texture_s3tc",
+          "WEBGL_debug_renderer_info",
+          "WEBGL_lose_context"
+        ],
         "webgpuAdapter": {
           "family": "NVIDIA",
           "vendor": "nvidia",
@@ -176,8 +212,22 @@
       },
       {
         "family": "AMD",
+        "allowedDeviceClasses": ["desktop"],
         "webglVendor": "Google Inc. (AMD)",
         "webglRenderer": "ANGLE (AMD, AMD Radeon RX 6600 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "webglExtensions": [
+          "ANGLE_instanced_arrays",
+          "EXT_blend_minmax",
+          "EXT_color_buffer_float",
+          "EXT_float_blend",
+          "EXT_texture_filter_anisotropic",
+          "OES_element_index_uint",
+          "OES_standard_derivatives",
+          "OES_texture_float",
+          "WEBGL_compressed_texture_s3tc",
+          "WEBGL_debug_renderer_info",
+          "WEBGL_lose_context"
+        ],
         "webgpuAdapter": {
           "family": "AMD",
           "vendor": "amd",
@@ -217,13 +267,16 @@
       { "hardwareConcurrency": 8, "deviceMemory": 8, "weight": 45 },
       { "hardwareConcurrency": 4, "deviceMemory": 8, "weight": 25 },
       { "hardwareConcurrency": 12, "deviceMemory": 8, "weight": 20 },
-      { "hardwareConcurrency": 16, "deviceMemory": 8, "weight": 10 }
+      { "hardwareConcurrency": 16, "deviceMemory": 8, "weight": 10 },
+      { "hardwareConcurrency": 16, "deviceMemory": 16, "weight": 8 },
+      { "hardwareConcurrency": 32, "deviceMemory": 32, "weight": 4 }
     ],
     "laptop": [
       { "hardwareConcurrency": 8, "deviceMemory": 8, "weight": 40 },
       { "hardwareConcurrency": 4, "deviceMemory": 8, "weight": 30 },
       { "hardwareConcurrency": 4, "deviceMemory": 4, "weight": 20 },
-      { "hardwareConcurrency": 12, "deviceMemory": 8, "weight": 10 }
+      { "hardwareConcurrency": 12, "deviceMemory": 8, "weight": 10 },
+      { "hardwareConcurrency": 16, "deviceMemory": 16, "weight": 8 }
     ]
   },
 

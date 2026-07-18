@@ -38,6 +38,9 @@ import {
 import {
   auditPinnedDepotTools,
 } from '../scripts/depot-tools-checkout.mjs';
+import {
+  validateM0BuildContract,
+} from '../scripts/build-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
@@ -48,6 +51,19 @@ const BASELINE_SCRIPT = join(ROOT, 'scripts', 'baseline.mjs');
 const BASELINE_PATH = join(ROOT, 'CHROMIUM_BASELINE');
 const FETCH = join(ROOT, 'scripts', 'fetch-chromium.sh');
 const BUILD = join(ROOT, 'scripts', 'build.sh');
+const REPOSITORY_ROOT = join(ROOT, '..');
+const AGGREGATE_WORKFLOW = join(
+  REPOSITORY_ROOT,
+  '.github',
+  'workflows',
+  'm0-aggregate.yml',
+);
+const HARD_GATE_WORKFLOW = join(
+  REPOSITORY_ROOT,
+  '.github',
+  'workflows',
+  'm0-hard-gate.yml',
+);
 const BASELINE = readChromiumBaseline(join(ROOT, 'CHROMIUM_BASELINE'));
 const BASELINE_RAW = readFileSync(BASELINE_PATH, 'utf8');
 const cliArgs = process.argv.slice(2);
@@ -734,6 +750,78 @@ try {
       windowsHide: true,
     });
     assert.equal(syntax.status, 0, syntax.stderr?.toString());
+  });
+
+  check('Actions preflight rejects workflow-path prefix substitution', () => {
+    const cases = [
+      {
+        path: AGGREGATE_WORKFLOW,
+        trusted: '.github/workflows/m0-builder.yml',
+      },
+      {
+        path: HARD_GATE_WORKFLOW,
+        trusted: '.github/workflows/m0-aggregate.yml',
+      },
+    ];
+    for (const { path, trusted } of cases) {
+      const source = readFileSync(path, 'utf8');
+      const escaped = trusted.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      const exactArm = new RegExp(
+        `${escaped}\\s*\\|\\s*\\\\\\s*\\n\\s*`
+        + `${escaped}@refs/heads/main\\)\\s*;;`,
+        'u',
+      );
+      assert.match(
+        source,
+        exactArm,
+        `${path} must accept only the canonical workflow path and main ref suffix`,
+      );
+      for (const glob of ['*', '?', '[']) {
+        assert.equal(
+          source.includes(`${trusted}${glob}`),
+          false,
+          `${path} must not use a glob in its trusted workflow path arm`,
+        );
+      }
+      const accepted = new Set([trusted, `${trusted}@refs/heads/main`]);
+      assert.equal(
+        accepted.has(`${trusted}.alt.yml`),
+        false,
+        `${path} accepted a same-prefix alternate workflow`,
+      );
+      assert.equal(
+        accepted.has(`${trusted}.alt.yml@refs/heads/main`),
+        false,
+        `${path} accepted a suffixed same-prefix alternate workflow`,
+      );
+    }
+  });
+
+  check('M0 trust contract rejects alternate workflow-path prefixes', () => {
+    const buildContract = JSON.parse(readFileSync(
+      join(ROOT, 'build', 'm0-build-contract.json'),
+      'utf8',
+    ));
+    const trustContract = JSON.parse(readFileSync(
+      join(ROOT, 'build', 'm0-trust.json'),
+      'utf8',
+    ));
+    validateM0BuildContract(buildContract, trustContract, {
+      engineRoot: ROOT,
+      repoRoot: REPOSITORY_ROOT,
+    });
+    for (const key of ['builder', 'aggregate', 'hardGate']) {
+      const substituted = structuredClone(trustContract);
+      substituted.workflows[key] += '.alt.yml';
+      assert.throws(
+        () => validateM0BuildContract(buildContract, substituted, {
+          engineRoot: ROOT,
+          repoRoot: REPOSITORY_ROOT,
+        }),
+        new RegExp(`trust\\.workflows\\.${key} must equal`, 'u'),
+        `trust workflow ${key} accepted a same-prefix alternate path`,
+      );
+    }
   });
 
   check('provenance requires an explicit artifact or demo mode', () => {

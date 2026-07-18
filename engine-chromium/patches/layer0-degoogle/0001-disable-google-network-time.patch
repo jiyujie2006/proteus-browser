@@ -1,8 +1,8 @@
 # Rationale: Keep Chromium's Google-backed Network Time query disabled by default while preserving an explicit feature override for controlled upstream tests.
 # Surface: Google-backed Network Time request (clients2.google.com/time/1/current)
 # Threat-vectors: reduces ambient network metadata; not a fingerprint or automation surface
-# Upstream-risk: LOW. One feature-default and its adjacent comment; re-audit if NetworkTimeTracker feature ownership or defaults change upstream.
-# Tests: exact-commit git apply/tree check; components/network_time unit tests with their explicit feature enable; three-platform build; controlled loopback probe with NetLog observation
+# Upstream-risk: LOW. One feature-default, its adjacent comment, and a dedicated default-state unit regression; re-audit if NetworkTimeTracker feature ownership or defaults change upstream.
+# Tests: exact-commit git apply/tree check; NetworkTimeFeatureDefaultTest.QueryingIsDisabledByDefault plus the upstream explicit disable/enable regression; three-platform build; controlled loopback probe with NetLog observation
 # Target-milestone: M0
 # Status: ACTIVE
 # Origin: Proteus-authored minimal layer0 implementation; behavior compared against ungoogled-chromium 150.0.7871.124-1 without copying its hard-off hunk.
@@ -26,3 +26,19 @@ diff --git a/components/network_time/network_time_tracker.cc b/components/networ
 -BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_ENABLED_BY_DEFAULT);
 +BASE_FEATURE(kNetworkTimeServiceQuerying, base::FEATURE_DISABLED_BY_DEFAULT);
  #endif
+diff --git a/components/network_time/network_time_tracker_unittest.cc b/components/network_time/network_time_tracker_unittest.cc
+--- a/components/network_time/network_time_tracker_unittest.cc
++++ b/components/network_time/network_time_tracker_unittest.cc
+@@ -58,3 +58,8 @@ static constexpr auto kDevKeyPubBytes = std::to_array<uint8_t>(
+-}  // namespace
+-
++}  // namespace
++
++TEST(NetworkTimeFeatureDefaultTest, QueryingIsDisabledByDefault) {
++  EXPECT_EQ(base::FEATURE_DISABLED_BY_DEFAULT,
++            kNetworkTimeServiceQuerying.default_state);
++}
++
+ class NetworkTimeTrackerTest : public ::testing::Test {
+  public:
+   class NetworkTimeTestObserver

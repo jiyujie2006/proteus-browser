@@ -21,6 +21,16 @@ vector ranking (V1 > V2 > V3).
 introduces any contradiction with another value, the change is wrong. A boring,
 coherent, common profile beats an impressive, incoherent one every time.
 
+**Read at the fleet level too.** The same ordering applies to the *population* of
+profiles Proteus emits, not just one profile. A profile must blend into the real
+crowd (V2), *and* the crowd of Proteus profiles must blend into the real world
+rather than cluster into a recognizable cohort (V2b). This extends "hiding
+uniqueness" from the individual to the fleet and is a load-bearing commitment in
+its own right — see [adr/0007](adr/0007-fleet-de-correlation.md) and
+[tdd/02](tdd/02-fingerprint-engine.md) §9. It also means coherence is a
+*distribution* to match, not a maximum to hit: an implausibly perfect profile is
+its own rarity signal (tdd/02 §6a).
+
 ---
 
 ## Principle II — Never impersonate across engine families

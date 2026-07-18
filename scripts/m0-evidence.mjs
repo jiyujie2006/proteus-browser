@@ -23,7 +23,10 @@ import {
 } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { normalize } from '../verify-lab/src/normalize.mjs';
-import { RULES_VERSION } from '../verify-lab/src/rules.mjs';
+import {
+  hasStructuredSixContextEvidence,
+  RULES_VERSION,
+} from '../verify-lab/src/rules.mjs';
 import { score } from '../verify-lab/src/score.mjs';
 import { buildControlledProbeBinding } from '../verify-lab/src/controlled-probe.mjs';
 import {
@@ -36,7 +39,7 @@ import {
 } from '../engine-chromium/scripts/patch-series.mjs';
 
 export const M0_EVIDENCE_SCHEMA_VERSION = '1.0.0';
-export const M0_ARTIFACT_REPORT_SCHEMA_VERSION = '1.2.0';
+export const M0_ARTIFACT_REPORT_SCHEMA_VERSION = '1.3.0';
 export const M0_EVIDENCE_ASSURANCE_LEVEL =
   'entrypoint-release-signed-scaffold/v1';
 export const M0_HARD_ASSURANCE_LEVEL =
@@ -885,6 +888,7 @@ export function validateM0ArtifactBaselineReport(
     'scope',
     'rulesVersion',
     'completed',
+    'coverage',
     'coverageComplete',
     'verdict',
     'gated',
@@ -976,6 +980,19 @@ export function validateM0ArtifactBaselineReport(
         || Array.isArray(report.context)) {
       throw new TypeError('observation/context must be objects');
     }
+    if (typeof report.context.requestUserAgent !== 'string'
+        || report.context.requestUserAgent.length === 0
+        || typeof report.observation.locale?.acceptLanguage !== 'string'
+        || report.observation.locale.acceptLanguage.length === 0) {
+      throw new TypeError(
+        'runtime observation must bind HTTP User-Agent and Accept-Language',
+      );
+    }
+    if (!hasStructuredSixContextEvidence(report.observation)) {
+      throw new TypeError(
+        'runtime observation must include structured six-context evidence',
+      );
+    }
     const reference = parseStrictJson(
       readFileSync(join(reportRepo, 'verify-lab', 'data', 'reference.json')),
       'V1-V5 reference data',
@@ -993,6 +1010,7 @@ export function validateM0ArtifactBaselineReport(
     probeMatches = false;
   }
   const summaryMatches = recomputed?.scope === 'runtime'
+    && isDeepStrictEqual(suite?.coverage, recomputed.coverage)
     && suite?.coverageComplete === recomputed.coverage.complete
     && suite?.gated === recomputed.gated
     && suite?.aggregate === recomputed.aggregate

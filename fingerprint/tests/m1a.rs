@@ -4,11 +4,11 @@ use std::path::PathBuf;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::SigningKey;
-use proteus_fingerprint::model::{CpuArch, DeviceClass, QuicPolicy};
+use proteus_fingerprint::model::{CpuArch, DeviceClass, OsName, QuicPolicy};
 use proteus_fingerprint::{
-    Dataset, FingerprintError, GenerateRequest, RULES_VERSION, TrustStore, canonical_payload,
-    generate, rescore, sign_config, signing_input, validate, verify_and_validate_signed_json,
-    verify_reproducible, verify_signed_json,
+    Dataset, FingerprintError, GENERATOR_VERSION, GenerateRequest, RULES_VERSION, TrustStore,
+    canonical_payload, generate, rescore, sign_config, signing_input, validate,
+    verify_and_validate_signed_json, verify_reproducible, verify_signed_json,
 };
 use sha2::{Digest, Sha256};
 
@@ -45,13 +45,14 @@ fn signing_key() -> SigningKey {
 #[test]
 fn shared_dataset_loads_and_is_versioned() {
     let dataset = dataset();
-    assert_eq!(dataset.version(), "0.2.0-m1a-seed");
+    assert_eq!(dataset.version(), "0.3.0");
     assert_eq!(
         dataset.sha256(),
-        "238d78daa773035cabc29ab7b44248dd6736a58e55d02f914e991eaf40885ed5"
+        "022919ecb9b990f17570bb0793c74871cfca393b0177e5cd5e098094e3d95787"
     );
-    assert_eq!(dataset.rules_version(), "1.0.0");
+    assert_eq!(dataset.rules_version(), "1.1.0");
     assert_eq!(dataset.rules_version(), RULES_VERSION);
+    assert_eq!(GENERATOR_VERSION, "0.2.0");
     assert!(!dataset.engine_targets().is_empty());
     assert!(!dataset.gpu_profiles_by_os()["Windows"].is_empty());
 }
@@ -103,7 +104,55 @@ fn generation_is_deterministic_and_strictly_valid() {
 }
 
 #[test]
-fn explicit_major_stays_replayable_with_multiple_dataset_targets() {
+fn generated_ua_and_client_hints_exactly_match_the_pinned_chrome_target() {
+    let dataset = dataset();
+    let body = generate(&request(), &dataset)
+        .expect("generate exact target")
+        .body;
+    let target = dataset
+        .engine_targets()
+        .iter()
+        .find(|target| {
+            target.family == "chromium" && target.brand == "Chrome" && target.major_version == 150
+        })
+        .expect("Chrome 150 target");
+    let hints = body.client_hints.as_ref().expect("Chromium Client Hints");
+
+    assert_eq!(
+        body.navigator.user_agent,
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+         (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+    );
+    assert!(
+        !body
+            .navigator
+            .user_agent
+            .contains(&body.engine.full_version),
+        "the reduced UA must not leak the full patch version"
+    );
+    assert_eq!(hints.brands, target.client_hint_brands);
+    assert_eq!(
+        hints.full_version_list,
+        target.client_hint_full_version_list
+    );
+    assert_eq!(
+        hints.brands[0],
+        proteus_fingerprint::model::BrandVersion {
+            brand: "Not;A=Brand".into(),
+            version: "8".into(),
+        }
+    );
+    assert_eq!(
+        hints.full_version_list[0],
+        proteus_fingerprint::model::BrandVersion {
+            brand: "Not;A=Brand".into(),
+            version: "8.0.0.0".into(),
+        }
+    );
+}
+
+#[test]
+fn explicit_major_stays_replayable_and_rescorable_with_multiple_dataset_targets() {
     let original = dataset();
     let dataset_bytes =
         read(repo_path("verify-lab/data/reference.json")).expect("read shared seed dataset");
@@ -113,6 +162,10 @@ fn explicit_major_stays_replayable_with_multiple_dataset_targets() {
     alternate["majorVersion"] = serde_json::json!(149);
     alternate["fullVersion"] = serde_json::json!("149.0.0.0");
     alternate["weight"] = serde_json::json!(u32::MAX);
+    alternate["clientHintBrands"][1]["version"] = serde_json::json!("149");
+    alternate["clientHintBrands"][2]["version"] = serde_json::json!("149");
+    alternate["clientHintFullVersionList"][1]["version"] = serde_json::json!("149.0.0.0");
+    alternate["clientHintFullVersionList"][2]["version"] = serde_json::json!("149.0.0.0");
     raw["engineTargets"]
         .as_array_mut()
         .expect("engineTargets array")
@@ -125,6 +178,11 @@ fn explicit_major_stays_replayable_with_multiple_dataset_targets() {
     let generated = generate(&request, &dataset).expect("pinned-major generation");
     assert_eq!(generated.body.engine.major_version, 150);
     assert_eq!(generated.body.provenance.dataset_sha256, dataset.sha256());
+    assert_eq!(
+        rescore(&generated.body, &dataset).expect("rescore pinned-major profile"),
+        generated.body.rarity,
+        "an unrelated high-weight engine major must not change the pinned target's rarity"
+    );
     verify_reproducible(&generated.body, &dataset).expect("pinned-major replay");
 }
 
@@ -356,30 +414,56 @@ fn deterministic_signing_vector_is_stable() {
     ));
     let public_key = STANDARD.encode(key.verifying_key().to_bytes());
 
-    // These values deliberately form a cross-language conformance vector.
-    // Update only with an explicit schema/canonicalization version change.
+    // These values deliberately form the current cross-language conformance
+    // vector. Behavior/provenance changes create a new versioned directory;
+    // older vector bytes remain immutable.
     assert_eq!(
         payload_hash,
-        "19bf3241b393b2c6bef029859645d5f95294bc1c19f04ebb420cb5a77c2d50dc"
+        "c82c6d94e2dd858c04e1b7872f5fd7f50b662b9666f5874347c461af1c16df95"
     );
     assert_eq!(
         input_hash,
-        "3777747e2b3c0762833364f1692199d0b7fcf5171c069257c5a51026ba073d64"
+        "b9029ea3209bcde6f356e8c61ed29843ba65588c692371ac8ae5409209fc08e2"
     );
     assert_eq!(public_key, "uvxxvq06xeS2PpyCFu5xo0quxlci7tvKcotOmzzM45Y=");
     assert_eq!(
         signed.signature.value,
-        "65XIfDi+hORSjpfkGzZ2gcje9ry4VQANcAoihudJvRpyx7iO9H9Nzpe4qqX4HQE5/w/qiLLDtKA5zXhz5zGCBw=="
+        "mCMU//o6bcyJtAjrJkYdcYgwGTj410mXlFeWiWmc3eXmPLRrBNAcShKVJr70eUyHGnNBA24H4Q2q5aGde3/qCg=="
     );
 
     let golden: serde_json::Value = serde_json::from_slice(
         &read(repo_path(
-            "fingerprint/conformance/v1/golden/windows-chrome-us.signed.json",
+            "fingerprint/conformance/v2/golden/windows-chrome-us.signed.json",
         ))
         .expect("read golden config"),
     )
     .expect("parse golden config");
     assert_eq!(signed.to_value().expect("signed value"), golden);
+}
+
+#[test]
+fn legacy_conformance_v1_bytes_and_signature_remain_valid() {
+    let golden = read(repo_path(
+        "fingerprint/conformance/v1/golden/windows-chrome-us.signed.json",
+    ))
+    .expect("read legacy golden");
+    let vector = read(repo_path("fingerprint/conformance/v1/signing-vector.json"))
+        .expect("read legacy vector");
+    assert_eq!(
+        hex(Sha256::digest(&golden)),
+        "f29dcf0e7d36cf18054c6591de3742d46feca8bb72da6c5d8112de9690529417"
+    );
+    assert_eq!(
+        hex(Sha256::digest(&vector)),
+        "79486a75d3658114c6864b6a4a43f581eba02db7b5ad698bd18d06e8bc290178"
+    );
+
+    let key = signing_key();
+    let mut trust = TrustStore::new();
+    trust
+        .insert("proteus-m1a-test-key", key.verifying_key())
+        .expect("trust legacy signing key");
+    verify_signed_json(&golden, &trust).expect("legacy v1 signature remains verifiable");
 }
 
 #[test]
@@ -429,6 +513,441 @@ fn impossible_or_malformed_requests_are_rejected_without_fallback() {
         generate(&modeled_desktop, &dataset),
         Err(FingerprintError::NoCandidate(_))
     ));
+}
+
+#[test]
+fn strict_validator_rejects_personas_outside_the_m1a_target() {
+    let dataset = dataset();
+    let baseline = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+
+    let mut wrong_os = baseline.clone();
+    wrong_os.persona.os.name = OsName::Linux;
+    let mut wrong_version = baseline.clone();
+    wrong_version.persona.os.version = "banana".into();
+    let mut wrong_arch = baseline.clone();
+    wrong_arch.persona.os.arch = CpuArch::Arm64;
+    let mut wrong_class = baseline.clone();
+    wrong_class.persona.device.class = DeviceClass::Phone;
+    let mut modeled_desktop = baseline;
+    modeled_desktop.persona.device.model = Some("not-a-desktop-model".into());
+
+    for (case, config, expected_field) in [
+        ("OS", wrong_os, "persona.os.name"),
+        ("OS version", wrong_version, "persona.os.version"),
+        ("architecture", wrong_arch, "persona.os.arch"),
+        ("device class", wrong_class, "persona.device.class"),
+        ("device model", modeled_desktop, "persona.device.model"),
+    ] {
+        let report = validate(&config, &dataset);
+        assert!(!report.valid, "{case} mutation must be rejected");
+        assert!(
+            report.issues.iter().any(|issue| {
+                issue.rule_id == "R-PERSONA-TARGET"
+                    && issue.fields == [expected_field]
+                    && issue.reason.contains("M1A")
+            }),
+            "{case} mutation needs a structured R-PERSONA-TARGET issue: {:?}",
+            report.issues
+        );
+    }
+}
+
+#[test]
+fn strict_validator_rejects_unbound_client_hints_platform_version() {
+    let dataset = dataset();
+    let mut body = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+    body.client_hints
+        .as_mut()
+        .expect("Chromium Client Hints")
+        .platform_version = "0.0.0".into();
+
+    let report = validate(&body, &dataset);
+    assert!(!report.valid);
+    assert!(
+        report.issues.iter().any(|issue| {
+            issue.rule_id == "R-UA-CH"
+                && issue
+                    .fields
+                    .iter()
+                    .any(|field| field == "clientHints.platformVersion")
+                && issue.reason.contains("engine target value")
+        }),
+        "platformVersion mutation needs a structured R-UA-CH issue: {:?}",
+        report.issues
+    );
+}
+
+#[test]
+fn strict_validator_rejects_a_mobile_model_for_the_windows_desktop_target() {
+    let dataset = dataset();
+    let mut body = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+    body.client_hints
+        .as_mut()
+        .expect("Chromium Client Hints")
+        .model = "Pixel 10".into();
+
+    let report = validate(&body, &dataset);
+    assert!(!report.valid);
+    assert!(
+        report.issues.iter().any(|issue| {
+            issue.rule_id == "R-UA-CH"
+                && issue
+                    .fields
+                    .iter()
+                    .any(|field| field == "clientHints.model")
+                && issue.reason.contains("must be empty")
+        }),
+        "Client Hints model mutation needs a structured R-UA-CH issue: {:?}",
+        report.issues
+    );
+}
+
+#[test]
+fn strict_validator_rejects_any_drift_in_ua_ch_webgl_or_screen_records() {
+    let dataset = dataset();
+    let baseline = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+
+    let mut full_version_ua = baseline.clone();
+    full_version_ua.navigator.user_agent = format!(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+         (KHTML, like Gecko) Chrome/{} Safari/537.36",
+        full_version_ua.engine.full_version
+    );
+    let mut reordered_brands = baseline.clone();
+    reordered_brands
+        .client_hints
+        .as_mut()
+        .expect("Client Hints")
+        .brands
+        .swap(0, 1);
+    let mut changed_full_list = baseline.clone();
+    changed_full_list
+        .client_hints
+        .as_mut()
+        .expect("Client Hints")
+        .full_version_list[0]
+        .version = "99.0.0.0".into();
+    let mut changed_extensions = baseline.clone();
+    changed_extensions.gpu.webgl_extensions.swap(0, 1);
+    let mut changed_available_screen = baseline.clone();
+    changed_available_screen.screen.avail_height -= 1;
+    let mut approximate_dpr = baseline;
+    approximate_dpr.screen.device_pixel_ratio += 0.0005;
+
+    for (case, config, rule, field) in [
+        (
+            "unreduced UA",
+            full_version_ua,
+            "R-UA-CH",
+            "navigator.userAgent",
+        ),
+        (
+            "reordered brands",
+            reordered_brands,
+            "R-UA-CH",
+            "clientHints.brands",
+        ),
+        (
+            "changed full-version list",
+            changed_full_list,
+            "R-UA-CH",
+            "clientHints.fullVersionList",
+        ),
+        (
+            "changed WebGL extensions",
+            changed_extensions,
+            "R-WEBGL-WEBGPU",
+            "gpu.webglExtensions",
+        ),
+        (
+            "changed available screen",
+            changed_available_screen,
+            "R-SCREEN-REAL",
+            "screen",
+        ),
+        (
+            "approximately matching DPR",
+            approximate_dpr,
+            "R-SCREEN-REAL",
+            "screen",
+        ),
+    ] {
+        let report = validate(&config, &dataset);
+        assert!(!report.valid, "{case} mutation must be rejected");
+        assert!(
+            report.issues.iter().any(|issue| {
+                issue.rule_id == rule && issue.fields.iter().any(|path| path == field)
+            }),
+            "{case} needs a structured {rule} issue for {field}: {:?}",
+            report.issues
+        );
+    }
+}
+
+#[test]
+fn gpu_profiles_are_conditioned_on_device_class_for_generation_and_validation() {
+    let dataset = dataset();
+    let mut laptop_request = request();
+    laptop_request.persona.device.class = DeviceClass::Laptop;
+    for marker in 0_u8..=63 {
+        laptop_request.seed = STANDARD.encode([marker; 32]);
+        let body = generate(&laptop_request, &dataset)
+            .unwrap_or_else(|error| panic!("laptop seed {marker}: {error}"))
+            .body;
+        let profile = dataset.gpu_profiles_by_os()["Windows"]
+            .iter()
+            .find(|profile| {
+                profile.webgl_vendor == body.gpu.webgl_vendor
+                    && profile.webgl_renderer == body.gpu.webgl_renderer
+            })
+            .expect("generated GPU belongs to the Windows table");
+        assert!(
+            profile
+                .allowed_device_classes
+                .contains(&DeviceClass::Laptop),
+            "laptop generation selected a desktop-only GPU"
+        );
+    }
+
+    let mut desktop_only_gpu_on_laptop = generate(&request(), &dataset)
+        .expect("the fixed desktop seed selects a desktop GPU")
+        .body;
+    let selected = dataset.gpu_profiles_by_os()["Windows"]
+        .iter()
+        .find(|profile| {
+            profile.webgl_renderer == desktop_only_gpu_on_laptop.gpu.webgl_renderer
+                && profile.webgl_vendor == desktop_only_gpu_on_laptop.gpu.webgl_vendor
+        })
+        .expect("selected GPU profile");
+    assert!(
+        !selected
+            .allowed_device_classes
+            .contains(&DeviceClass::Laptop),
+        "fixture seed must exercise a desktop-only GPU"
+    );
+    desktop_only_gpu_on_laptop.persona.device.class = DeviceClass::Laptop;
+    let report = validate(&desktop_only_gpu_on_laptop, &dataset);
+    assert!(
+        report.issues.iter().any(|issue| {
+            issue.rule_id == "R-PLATFORM-GPU"
+                && issue
+                    .fields
+                    .iter()
+                    .any(|field| field == "persona.device.class")
+        }),
+        "OS+class-invalid GPU needs R-PLATFORM-GPU: {:?}",
+        report.issues
+    );
+}
+
+#[test]
+fn strict_validator_compares_every_webgpu_adapter_field() {
+    let dataset = dataset();
+    let baseline = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+
+    let mut wrong_architecture = baseline.clone();
+    wrong_architecture
+        .gpu
+        .webgpu_adapter
+        .as_mut()
+        .expect("WebGPU adapter")
+        .architecture = "wrong-architecture".into();
+    let mut wrong_description = baseline;
+    wrong_description
+        .gpu
+        .webgpu_adapter
+        .as_mut()
+        .expect("WebGPU adapter")
+        .description = "wrong description".into();
+
+    for (field, config) in [
+        ("architecture", wrong_architecture),
+        ("description", wrong_description),
+    ] {
+        let report = validate(&config, &dataset);
+        assert!(!report.valid, "WebGPU {field} mutation must be rejected");
+        assert!(
+            report.issues.iter().any(|issue| {
+                issue.rule_id == "R-WEBGL-WEBGPU"
+                    && issue.fields.iter().any(|path| path == "gpu.webgpuAdapter")
+                    && issue.reason.contains("exactly match")
+            }),
+            "WebGPU {field} mutation needs an R-WEBGL-WEBGPU issue: {:?}",
+            report.issues
+        );
+    }
+}
+
+#[test]
+fn rescore_requires_the_complete_class_eligible_gpu_record() {
+    let dataset = dataset();
+    let baseline = generate(&request(), &dataset)
+        .expect("generate valid baseline")
+        .body;
+
+    let mut changed_extensions = baseline.clone();
+    changed_extensions.gpu.webgl_extensions.swap(0, 1);
+    assert!(matches!(
+        rescore(&changed_extensions, &dataset),
+        Err(FingerprintError::NoCandidate(message))
+            if message.contains("GPU profile")
+    ));
+
+    let mut changed_adapter = baseline;
+    changed_adapter
+        .gpu
+        .webgpu_adapter
+        .as_mut()
+        .expect("WebGPU adapter")
+        .description = "same renderer, different adapter record".into();
+    assert!(matches!(
+        rescore(&changed_adapter, &dataset),
+        Err(FingerprintError::NoCandidate(message))
+            if message.contains("GPU profile")
+    ));
+}
+
+#[test]
+fn chrome_150_non_android_device_memory_buckets_accept_16_and_32_gib_joint_pairs() {
+    let dataset = dataset();
+    let desktop = generate(&request(), &dataset)
+        .expect("generate desktop baseline")
+        .body;
+    let mut laptop_request = request();
+    laptop_request.persona.device.class = DeviceClass::Laptop;
+    let laptop = generate(&laptop_request, &dataset)
+        .expect("generate laptop baseline")
+        .body;
+
+    for (case, mut body, cores, memory) in [
+        ("desktop 16/16", desktop.clone(), 16, 16.0),
+        ("desktop 32/32", desktop, 32, 32.0),
+        ("laptop 16/16", laptop, 16, 16.0),
+    ] {
+        body.navigator.hardware_concurrency = cores;
+        body.navigator.device_memory = memory;
+        let report = validate(&body, &dataset);
+        assert!(
+            report.valid,
+            "{case} is a declared Chrome 150 joint pair and must pass public semantic validation: {:?}",
+            report.issues
+        );
+    }
+}
+
+#[test]
+fn dataset_rejects_semantically_duplicate_or_unbound_sampling_records() {
+    let bytes =
+        read(repo_path("verify-lab/data/reference.json")).expect("read shared seed dataset");
+    let baseline: serde_json::Value =
+        serde_json::from_slice(&bytes).expect("parse shared seed dataset as JSON");
+
+    let mut duplicate_target = baseline.clone();
+    let target = duplicate_target["engineTargets"][0].clone();
+    duplicate_target["engineTargets"]
+        .as_array_mut()
+        .expect("engine target array")
+        .push(target);
+    assert_invalid_dataset(duplicate_target, "duplicate semantic engine target");
+
+    let mut wrong_target_family = baseline.clone();
+    wrong_target_family["engineTargets"][0]["family"] = serde_json::json!("firefox");
+    assert_invalid_dataset(wrong_target_family, "belongs to chromium");
+
+    let mut duplicate_gpu = baseline.clone();
+    let gpu = duplicate_gpu["gpuProfilesByOs"]["Windows"][0].clone();
+    duplicate_gpu["gpuProfilesByOs"]["Windows"]
+        .as_array_mut()
+        .expect("GPU profile array")
+        .push(gpu);
+    assert_invalid_dataset(duplicate_gpu, "duplicate semantic WebGL GPU profile");
+
+    let mut duplicate_gpu_class = baseline.clone();
+    duplicate_gpu_class["gpuProfilesByOs"]["Windows"][0]["allowedDeviceClasses"]
+        .as_array_mut()
+        .expect("allowed classes")
+        .push(serde_json::json!("desktop"));
+    assert_invalid_dataset(duplicate_gpu_class, "unique allowedDeviceClasses");
+
+    let mut duplicate_extension = baseline.clone();
+    let extension =
+        duplicate_extension["gpuProfilesByOs"]["Windows"][0]["webglExtensions"][0].clone();
+    duplicate_extension["gpuProfilesByOs"]["Windows"][0]["webglExtensions"]
+        .as_array_mut()
+        .expect("WebGL extensions")
+        .push(extension);
+    assert_invalid_dataset(duplicate_extension, "unique WebGL extensions");
+
+    let mut duplicate_screen = baseline.clone();
+    let screen = duplicate_screen["screenTuplesByClass"]["desktop"][0].clone();
+    duplicate_screen["screenTuplesByClass"]["desktop"]
+        .as_array_mut()
+        .expect("screen tuple array")
+        .push(screen);
+    assert_invalid_dataset(duplicate_screen, "duplicate semantic tuple");
+
+    let mut unbound_screen_weight = baseline.clone();
+    unbound_screen_weight["screenWeightsByClass"]["desktop"]["111x222@1"] = serde_json::json!(1);
+    assert_invalid_dataset(unbound_screen_weight, "must exactly match");
+
+    let mut duplicate_hardware = baseline.clone();
+    let hardware = duplicate_hardware["hardwarePairsByClass"]["desktop"][0].clone();
+    duplicate_hardware["hardwarePairsByClass"]["desktop"]
+        .as_array_mut()
+        .expect("hardware pair array")
+        .push(hardware);
+    assert_invalid_dataset(duplicate_hardware, "duplicate semantic pair");
+
+    let mut duplicate_font = baseline.clone();
+    let font = duplicate_font["fontProfilesByOs"]["Windows"][0].clone();
+    duplicate_font["fontProfilesByOs"]["Windows"]
+        .as_array_mut()
+        .expect("font profile array")
+        .push(font);
+    assert_invalid_dataset(duplicate_font, "unique IDs/sets");
+
+    let mut duplicate_media = baseline.clone();
+    let media = duplicate_media["mediaProfilesByOs"]["Windows"][0].clone();
+    duplicate_media["mediaProfilesByOs"]["Windows"]
+        .as_array_mut()
+        .expect("media profile array")
+        .push(media);
+    assert_invalid_dataset(duplicate_media, "unique non-empty IDs");
+
+    let mut unbound_client_hints = baseline;
+    unbound_client_hints["engineTargets"][0]["clientHintBrands"][2]["version"] =
+        serde_json::json!("149");
+    unbound_client_hints["engineTargets"][0]["clientHintFullVersionList"][2]["version"] =
+        serde_json::json!("149.0.0.0");
+    assert_invalid_dataset(
+        unbound_client_hints,
+        "must bind Chromium/product versions and exactly one GREASE brand",
+    );
+
+    let mut extra_client_hint = serde_json::from_slice::<serde_json::Value>(&bytes)
+        .expect("parse shared seed dataset as JSON");
+    extra_client_hint["engineTargets"][0]["clientHintBrands"]
+        .as_array_mut()
+        .expect("Client Hint brands")
+        .push(serde_json::json!({ "brand": "Arbitrary Browser", "version": "1" }));
+    extra_client_hint["engineTargets"][0]["clientHintFullVersionList"]
+        .as_array_mut()
+        .expect("Client Hint full-version list")
+        .push(serde_json::json!({ "brand": "Arbitrary Browser", "version": "1.0.0.0" }));
+    assert_invalid_dataset(
+        extra_client_hint,
+        "exactly three aligned Client Hint entries",
+    );
 }
 
 #[test]
@@ -563,6 +1082,16 @@ fn strict_validator_covers_schema_bounds_not_expressed_by_rust_types() {
             report.issues
         );
     }
+}
+
+fn assert_invalid_dataset(raw: serde_json::Value, expected: &str) {
+    assert!(
+        matches!(
+            Dataset::from_json(&serde_json::to_vec(&raw).expect("serialize malformed dataset")),
+            Err(FingerprintError::InvalidDataset(message)) if message.contains(expected)
+        ),
+        "dataset mutation should fail with a message containing {expected:?}"
+    );
 }
 
 fn hex(bytes: impl AsRef<[u8]>) -> String {

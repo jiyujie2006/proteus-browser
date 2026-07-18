@@ -26,13 +26,17 @@ Winning is not a UI problem. In priority order, it is:
 
 1. **Consistency.** The #1 way these tools get caught is *incoherence* — a macOS
    claim with Windows fonts, an Apple GPU under `Win32`, a timezone that fights the
-   proxy's IP. Fix coherence and you beat most detection.
+   proxy's IP. Fix coherence and you beat most detection. Read it at the *fleet*
+   level too: the population of profiles you emit must blend into the real world,
+   not cluster into a recognizable "made by this tool" cohort
+   ([`docs/adr/0007`](docs/adr/0007-fleet-de-correlation.md)).
 2. **Native production.** Fingerprint values must come from the C++ engine, not
    JavaScript overrides, or they leave detectable traces (wrong `toString`,
    descriptors, Worker/iframe mismatches).
-3. **Cross-layer alignment.** The JS fingerprint, the TLS handshake (JA3/JA4), the
-   HTTP/2 settings, and behavior must all tell the *same* story. Perfect JS with a
-   Go TLS fingerprint still dies.
+3. **Cross-layer alignment.** The JS fingerprint, the TLS handshake (JA3/JA4,
+   ECH shape, and whether the connection looks tunneled), the HTTP/2 settings, and
+   behavior must all tell the *same* story. Perfect JS with a Go TLS fingerprint
+   still dies.
 4. **The treadmill.** Chromium ships every few weeks; a fingerprint that lags the
    real population is anomalous by definition. Staying current is survival.
 
@@ -73,8 +77,13 @@ handshake *is* the correct one — so the sidecar just tunnels. Detail:
 - **Four-layer consistency** with tunnel-not-MITM fidelity — even most premium
   tools don't do all of it.
 - **Real-distribution sampling + rarity scoring** — actively avoid being
-  *over-unique*; show a "blend-in" score. Attacks the second-biggest detection
+  *over-unique* (and *over-clean*); show a "blend-in" score. Attacks the second-biggest detection
   vector that nearly everyone ignores.
+- **Fleet de-correlation, measured** — the whole population of profiles must blend
+  into the real world, not just each profile individually. An adversarial red-team
+  classifier that tries to detect "made by Proteus" is a tracked release gate.
+  This is the vector that historically kills popular stealth tools, and almost
+  nobody measures it ([`docs/adr/0007`](docs/adr/0007-fleet-de-correlation.md)).
 - **Public regression dashboard** — verifiable, non-degrading effectiveness.
 - **Reproducible builds + provenance** — trust the binary, don't just hope.
 - **Local-first + zero-knowledge sync** — your data, your keys.

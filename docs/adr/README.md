@@ -18,6 +18,7 @@ Format: lightweight [MADR](https://adr.github.io/madr/)-style.
 | [0004](0004-tauri-manager.md) | Tauri (Rust + OS webview) for the Manager | Accepted |
 | [0005](0005-native-over-injection.md) | Native engine production over JS injection | Accepted |
 | [0006](0006-config-driven-single-binary.md) | One engine binary, N identities via signed config | Accepted |
+| [0007](0007-fleet-de-correlation.md) | Treat the tool's own fleet/cohort signature as a first-class, measured threat (V2b) | Accepted |
 
 ## Proposed / future ADRs (not yet written — flagged where the doc calls for them)
 

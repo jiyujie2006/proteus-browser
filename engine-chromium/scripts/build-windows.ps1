@@ -305,9 +305,9 @@ Assert-OrdinaryFile -Path $artifact -Label 'Windows Chromium executable'
 $networkTimeTest = Join-Path $outDir 'components_unittests.exe'
 Assert-OrdinaryFile -Path $networkTimeTest `
     -Label 'Windows components_unittests executable'
-Write-Host '==> verifying the Network Time feature disable/explicit-enable paths'
+Write-Host '==> verifying the Network Time default-off and explicit override paths'
 Invoke-Native -FilePath $networkTimeTest -Arguments @(
-    '--gtest_filter=NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled',
+    '--gtest_filter=NetworkTimeFeatureDefaultTest.QueryingIsDisabledByDefault:NetworkTimeTrackerTest.NoNetworkQueryWhileFeatureDisabled',
     '--test-launcher-bot-mode'
 )
 

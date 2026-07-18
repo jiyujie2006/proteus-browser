@@ -540,10 +540,29 @@ async function main(options) {
       throw new Error('probe evaluation did not return serialized observation JSON');
     }
     const raw = JSON.parse(serialized);
+    const runtimeContext = {};
+    if (JSON_OUTPUT) {
+      const requestHeaders = probeServer.entryRequestHeaders();
+      if (typeof requestHeaders.acceptLanguage !== 'string'
+          || requestHeaders.acceptLanguage.length === 0
+          || typeof requestHeaders.userAgent !== 'string'
+          || requestHeaders.userAgent.length === 0) {
+        throw new Error(
+          'controlled probe entry request omitted Accept-Language or User-Agent',
+        );
+      }
+      if (!raw.locale
+          || typeof raw.locale !== 'object'
+          || Array.isArray(raw.locale)) {
+        throw new Error('controlled probe collection omitted a locale object');
+      }
+      raw.locale.acceptLanguage = requestHeaders.acceptLanguage;
+      runtimeContext.requestUserAgent = requestHeaders.userAgent;
+    }
 
     // Score the live collection. No proxy context in this harness → V4 stays n/a.
     const ref = loadReference();
-    const scored = score(normalize(raw, {}), ref);
+    const scored = score(normalize(raw, runtimeContext), ref);
     if (JSON_OUTPUT) {
       launchGuard?.assertHeld();
       await assertRunningProcessImage(
@@ -569,6 +588,7 @@ async function main(options) {
         observation: raw,
         platform: PLATFORM,
         probe: probeServer.binding,
+        context: runtimeContext,
       });
       const artifactAfter = artifactStat(CHROME);
       if (report.browserArtifactSha256 !== artifactBefore.sha256
@@ -592,6 +612,11 @@ async function main(options) {
       console.log('   timezone  :', raw.locale?.timezone);
       console.log('   webdriver :', raw.automation?.webdriver, '(true = automation tell, expected under CDP)');
       console.log('   fonts (#) :', raw.fonts?.set?.length ?? 'none detected');
+      const contextStates = raw.traces?.crossContext?.requiredContexts
+        ?.map((name) => `${name}=${raw.traces.crossContext.contexts?.[name]?.status ?? 'missing'}`)
+        .join(', ');
+      console.log('   contexts  :', contextStates ?? 'not measured');
+      console.log('   ctx diffs :', raw.traces?.crossContext?.mismatches?.length ?? 'not measured');
       console.log('');
     }
   } catch (error) {

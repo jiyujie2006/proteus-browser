@@ -95,11 +95,11 @@ src/
   reference-util.mjs   pure helpers (browser-safe, no node:fs)
   browser-close.mjs    bounded Browser.close write/normal-exit protocol
   cdp-pipe.mjs         bounded NUL-framed CDP client over child fds 3/4
-  controlled-probe.mjs fixed two-file probe server + byte-level binding
+  controlled-probe.mjs fixed four-file probe server + byte-level binding
   network-time-audit.mjs stable NetLog reader + default-query audit
   artifact-report.mjs  recomputed machine baseline report builder
 data/reference.json    coherence reference data (OS↔platform, GPU-per-OS, fonts, tz…)
-probe-page/            the offline, in-browser detection page (index.html + collect.js)
+probe-page/            offline collector plus bound iframe/worker context probes
 fixtures/              known-good / known-bad profiles; the lab tests itself on these
 tools/drive-chrome.mjs drive real headless Chrome and score its live fingerprint
 test/run-tests.mjs     integration: full Draft 2020-12 schema + reference/conformance checks

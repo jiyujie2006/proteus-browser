@@ -6,7 +6,8 @@
 // recomputes every local digest, validates the complete bundle tree, checks the
 // predicate against those recomputed facts, and cross-checks GitHub identities
 // through a digest-pinned GitHub CLI API verifier (with explicit injection only
-// for tests). Only the certificate and verified timestamps returned by
+// for tests). The versioned verification-result envelope, matched certificate
+// identity, certificate summary, and verified timestamps returned by
 // `gh attestation verify` are treated as cryptographic verification results.
 
 import {
@@ -85,6 +86,8 @@ export const M0_EVIDENCE_V2_ASSURANCE_LEVEL =
 export const M0_EVIDENCE_V2_BUILD_SLOTS = Object.freeze(['A', 'B']);
 export const M0_EVIDENCE_V2_STATEMENT_TYPE =
   'https://in-toto.io/Statement/v1';
+const SIGSTORE_VERIFICATION_RESULT_MEDIA_TYPE =
+  'application/vnd.dev.sigstore.verificationresult+json;version=0.1';
 
 const SHA256_RE = /^[0-9a-f]{64}$/u;
 const GIT_COMMIT_RE = /^[0-9a-f]{40}$/u;
@@ -1839,9 +1842,55 @@ function verifyAttestation({
   }
   exactKeys(
     item.verificationResult,
-    ['signature', 'verifiedTimestamps', 'statement'],
+    [
+      'mediaType',
+      'signature',
+      'statement',
+      'verifiedIdentity',
+      'verifiedTimestamps',
+    ],
     `${type} verificationResult`,
   );
+  if (item.verificationResult.mediaType
+      !== SIGSTORE_VERIFICATION_RESULT_MEDIA_TYPE) {
+    throw new TypeError(
+      `${type} verificationResult has an unsupported Sigstore media type`,
+    );
+  }
+  const expectedVerifiedIdentity = {
+    subjectAlternativeName: {
+      subjectAlternativeName: '',
+      regexp: `^https://github.com/${signerWorkflow}`,
+    },
+    issuer: {
+      issuer: '',
+      regexp: '.*',
+    },
+    ...(denySelfHosted ? { runnerEnvironment: 'github-hosted' } : {}),
+  };
+  exactKeys(
+    item.verificationResult.verifiedIdentity,
+    Object.keys(expectedVerifiedIdentity),
+    `${type} verified identity`,
+  );
+  exactKeys(
+    item.verificationResult.verifiedIdentity.subjectAlternativeName,
+    ['subjectAlternativeName', 'regexp'],
+    `${type} verified identity subject alternative name`,
+  );
+  exactKeys(
+    item.verificationResult.verifiedIdentity.issuer,
+    ['issuer', 'regexp'],
+    `${type} verified identity issuer`,
+  );
+  if (!isDeepStrictEqual(
+    item.verificationResult.verifiedIdentity,
+    expectedVerifiedIdentity,
+  )) {
+    throw new TypeError(
+      `${type} verified identity does not match the pinned gh policy`,
+    );
+  }
   exactKeys(
     item.verificationResult.signature,
     ['certificate'],
@@ -1888,19 +1937,28 @@ function verifyAttestation({
   }
   const timestamps = item.verificationResult.verifiedTimestamps;
   if (!Array.isArray(timestamps)
-      || timestamps.length === 0
-      || timestamps.some((timestamp) =>
-        !isPlainObject(timestamp) || Object.keys(timestamp).length === 0)) {
+      || timestamps.length === 0) {
     throw new TypeError(`${type} verification result lacks verified timestamps`);
   }
-  for (const timestamp of timestamps) {
-    if (Object.hasOwn(timestamp, 'timestamp')) {
-      const value = timestamp.timestamp;
-      if (typeof value !== 'string'
-          || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$/u.test(value)
-          || !Number.isFinite(Date.parse(value))) {
-        throw new TypeError(`${type} verified timestamp is not valid RFC 3339`);
-      }
+  for (const [index, timestamp] of timestamps.entries()) {
+    const label = `${type} verified timestamp ${index}`;
+    exactKeys(timestamp, ['type', 'uri', 'timestamp'], label);
+    apiString(timestamp.type, `${label} type`, 128);
+    const uri = apiString(timestamp.uri, `${label} URI`, 2048);
+    let parsedUri;
+    try {
+      parsedUri = new URL(uri);
+    } catch {
+      throw new TypeError(`${label} URI must be a valid HTTPS URL`);
+    }
+    if (parsedUri.protocol !== 'https:'
+        || parsedUri.hostname.length === 0
+        || parsedUri.username.length > 0
+        || parsedUri.password.length > 0) {
+      throw new TypeError(`${label} URI must be a valid HTTPS URL`);
+    }
+    if (!isCanonicalRfc3339(timestamp.timestamp)) {
+      throw new TypeError(`${type} verified timestamp is not valid RFC 3339`);
     }
   }
   validateAttestationStatement(
@@ -1908,6 +1966,32 @@ function verifyAttestation({
     expectedStatement,
     `${buildFacts.platform}/${buildFacts.slot} ${type}`,
   );
+}
+
+function isCanonicalRfc3339(value) {
+  if (typeof value !== 'string') return false;
+  const match = value.match(
+    /^(?<year>[0-9]{4})-(?<month>0[1-9]|1[0-2])-(?<day>0[1-9]|[12][0-9]|3[01])T(?<hour>[01][0-9]|2[0-3]):(?<minute>[0-5][0-9]):(?<second>[0-5][0-9])(?:\.[0-9]{0,8}[1-9])?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$/u,
+  );
+  if (!match || Number(match.groups.year) === 0) return false;
+  const year = Number(match.groups.year);
+  const month = Number(match.groups.month);
+  const day = Number(match.groups.day);
+  const daysInMonth = [
+    31,
+    year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+  return day <= daysInMonth && Number.isFinite(Date.parse(value));
 }
 
 function validateAttestationStatement(actual, expected, label) {
@@ -2337,6 +2421,8 @@ const SOURCE_POLICY_PATHS = Object.freeze([
   'scripts/strict-json.mjs',
   'verify-lab/data/reference.json',
   'verify-lab/probe-page/collect.js',
+  'verify-lab/probe-page/context-frame.html',
+  'verify-lab/probe-page/context-worker.js',
   'verify-lab/probe-page/headless.html',
   'verify-lab/src/controlled-probe.mjs',
   'verify-lab/src/network-time-audit.mjs',

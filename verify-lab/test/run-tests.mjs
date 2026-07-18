@@ -87,11 +87,11 @@ function fixtureToConfig(fx) {
   cfg.network = cfg.network || { quicPolicy: 'match-brand', webrtcPolicy: 'proxy-only' };
   cfg.rarity = cfg.rarity || { score: 1, verdict: 'blends-in', reasons: [] };
   cfg.provenance = cfg.provenance || {
-    datasetVersion: '0.2.0-m1a-seed',
+    datasetVersion: '0.3.0',
     datasetSha256: '0'.repeat(64),
-    engineVersion: '0.0.0',
-    rulesVersion: '1.0.0',
-    generatorVersion: '0.1.0',
+    engineVersion: '150.0.7871.124',
+    rulesVersion: '1.1.0',
+    generatorVersion: '0.2.0',
   };
   cfg.signature = cfg.signature || {
     algorithm: 'Ed25519',

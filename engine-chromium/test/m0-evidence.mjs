@@ -52,6 +52,9 @@ import { buildControlledProbeBinding } from '../../verify-lab/src/controlled-pro
 import {
   auditNetworkTimeNetLog,
 } from '../../verify-lab/src/network-time-audit.mjs';
+import { normalize } from '../../verify-lab/src/normalize.mjs';
+import { loadReference } from '../../verify-lab/src/reference.mjs';
+import { score } from '../../verify-lab/src/score.mjs';
 import { readChromiumBaseline } from '../scripts/baseline.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -103,7 +106,12 @@ function createFixture() {
     join(repo, 'verify-lab', 'data', 'reference.json'),
   );
   mkdirSync(join(repo, 'verify-lab', 'probe-page'), { recursive: true });
-  for (const name of ['headless.html', 'collect.js']) {
+  for (const name of [
+    'headless.html',
+    'collect.js',
+    'context-frame.html',
+    'context-worker.js',
+  ]) {
     cpSync(
       join(REPO, 'verify-lab', 'probe-page', name),
       join(repo, 'verify-lab', 'probe-page', name),
@@ -184,16 +192,20 @@ function createFixture() {
         M0_TOOLCHAINS[platform].arches[0];
       writeFileSync(provenanceFile, JSON.stringify(provenance));
     }
+    const observation = attachStructuredCrossContext(JSON.parse(readFileSync(
+      join(REPO, 'verify-lab', 'fixtures', 'bad-v5-automation-tells.json'),
+      'utf8',
+    )));
     const report = buildArtifactBaselineReport({
       artifactPath: join(artifacts, artifactPath),
+      context: {
+        requestUserAgent: observation.navigator.userAgent,
+      },
       executionIsolation: M0_EXTERNAL_EXECUTION_ISOLATION,
       networkTimeAudit: auditNetworkTimeNetLog({
         events: [{ params: { url: 'http://127.0.0.1/probe' } }],
       }),
-      observation: JSON.parse(readFileSync(
-        join(REPO, 'verify-lab', 'fixtures', 'bad-v5-automation-tells.json'),
-        'utf8',
-      )),
+      observation,
       platform,
       probe: buildControlledProbeBinding(join(repo, 'verify-lab')),
     });
@@ -318,6 +330,64 @@ function writeEvidence(repo, evidence) {
 
 function digest(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+function attachStructuredCrossContext(observation) {
+  const requiredContexts = [
+    'main',
+    'same-origin-iframe',
+    'cross-origin-iframe',
+    'dedicated-worker',
+    'shared-worker',
+    'service-worker',
+  ];
+  const mainValues = {
+    navigator: {
+      userAgent: observation.navigator.userAgent,
+      platform: observation.navigator.platform,
+      languages: structuredClone(observation.navigator.languages),
+      hardwareConcurrency: observation.navigator.hardwareConcurrency,
+      deviceMemory: observation.navigator.deviceMemory,
+      vendor: observation.navigator.vendor,
+    },
+    locale: {
+      timezone: observation.locale.timezone,
+      intlLocale: observation.locale.intlLocale,
+    },
+    clientHints: structuredClone(observation.clientHints),
+    gpu: {
+      webglVendor: observation.gpu.webglVendor,
+      webglRenderer: observation.gpu.webglRenderer,
+    },
+  };
+  observation.traces.crossContext = {
+    schemaVersion: '1.0.0',
+    requiredContexts,
+    contexts: Object.fromEntries(requiredContexts.map((context) => {
+      const values = structuredClone(mainValues);
+      if (context.endsWith('worker')) delete values.navigator.vendor;
+      return [context, { status: 'ok', values }];
+    })),
+    mismatches: [],
+    complete: true,
+  };
+  return observation;
+}
+
+function rebindReportSummary(report) {
+  const scored = score(
+    normalize(report.observation, report.context),
+    loadReference(),
+  );
+  Object.assign(report.suites[0], {
+    coverage: scored.coverage,
+    coverageComplete: scored.coverage.complete,
+    verdict: scored.verdict,
+    gated: scored.gated,
+    aggregate: scored.aggregate,
+    inconsistencies: scored.inconsistencies,
+    vectors: scored.vectors,
+  });
 }
 
 function executableFixture(platform) {
@@ -488,6 +558,31 @@ withFixture(({ repo, draft, privateKeyPath, artifacts }) => {
       && linux.verificationReport.sha256
         === sha256File(join(artifacts, linux.verificationReport.path)),
     'assembler recomputes patch, artifact, provenance, and report hashes',
+  );
+});
+
+withFixture(({ repo, artifacts, evidence }) => {
+  const platform = 'windows-x64';
+  const item = evidence.platforms[platform];
+  const report = JSON.parse(readFileSync(
+    join(artifacts, item.verificationReport.path),
+    'utf8',
+  ));
+  delete report.observation.traces.crossContext;
+  check(
+    throwsMessage(
+      () => buildArtifactBaselineReport({
+        artifactPath: join(artifacts, item.artifact.path),
+        context: report.context,
+        executionIsolation: report.executionIsolation,
+        networkTimeAudit: report.networkTimeAudit,
+        observation: report.observation,
+        platform,
+        probe: report.probe,
+      }),
+      /structured evidence for all six execution contexts/,
+    ),
+    'artifact report construction rejects a legacy-only cross-context counter',
   );
 });
 
@@ -859,6 +954,78 @@ withFixture(({ repo, artifacts, evidence, privateKey }) => {
   const audit = verifyM0BuildEvidence(repo);
   check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
     'a re-signed score contradicting pass/fail counts is rejected');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'windows-x64';
+  const reportPath = join(
+    artifacts,
+    evidence.platforms[platform].verificationReport.path,
+  );
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  report.suites[0].coverage.measured += 1;
+  writeFileSync(reportPath, JSON.stringify(report));
+  evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
+    'a re-signed report cannot forge its required-rule coverage summary');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'windows-x64';
+  const reportPath = join(
+    artifacts,
+    evidence.platforms[platform].verificationReport.path,
+  );
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  delete report.context.requestUserAgent;
+  rebindReportSummary(report);
+  writeFileSync(reportPath, JSON.stringify(report));
+  evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
+    'a re-signed report cannot omit the observed HTTP User-Agent binding');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'windows-x64';
+  const reportPath = join(
+    artifacts,
+    evidence.platforms[platform].verificationReport.path,
+  );
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  delete report.observation.locale.acceptLanguage;
+  rebindReportSummary(report);
+  writeFileSync(reportPath, JSON.stringify(report));
+  evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
+    'a re-signed report cannot omit the observed HTTP Accept-Language binding');
+});
+
+withFixture(({ repo, artifacts, evidence, privateKey }) => {
+  const platform = 'windows-x64';
+  const reportPath = join(
+    artifacts,
+    evidence.platforms[platform].verificationReport.path,
+  );
+  const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+  delete report.observation.traces.crossContext;
+  report.observation.traces.crossContextMismatches = 0;
+  rebindReportSummary(report);
+  writeFileSync(reportPath, JSON.stringify(report));
+  evidence.platforms[platform].verificationReport.sha256 = sha256File(reportPath);
+  resignPlatform(evidence, platform, privateKey, artifacts);
+  writeEvidence(repo, evidence);
+  const audit = verifyM0BuildEvidence(repo);
+  check(!audit.ok && audit.failures.some((failure) => failure.includes('baseline report')),
+    'a re-signed artifact baseline cannot replace six-context evidence with the legacy mismatch counter');
 });
 
 withFixture(({ repo, artifacts, evidence, privateKey }) => {

@@ -66,50 +66,17 @@
     return count;
   }
 
-  // ---- V3: cross-context consistency (main vs worker) ---------------------
-  // Returns a Promise<number> of mismatches. Spins up a worker that reports the
-  // same surfaces and compares. Falls back to 0-unmeasured if workers unavailable.
-  function crossContextMismatches(mainValues) {
-    return new Promise((resolve) => {
-      if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL === 'undefined') {
-        return resolve(null);
-      }
-      const src = `self.onmessage=function(){try{postMessage({ok:true,v:{` +
-        `userAgent:navigator.userAgent,` +
-        `platform:navigator.platform,` +
-        `hardwareConcurrency:navigator.hardwareConcurrency,` +
-        `languages:(navigator.languages||[]).join(',')` +
-        `}})}catch(e){postMessage({ok:false})}}`;
-      let url;
-      try {
-        url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
-        const w = new Worker(url);
-        const timer = setTimeout(() => { safe(() => w.terminate()); cleanup(); resolve(null); }, 1500);
-        function cleanup() { safe(() => URL.revokeObjectURL(url)); clearTimeout(timer); }
-        w.onmessage = (e) => {
-          cleanup(); safe(() => w.terminate());
-          if (!e.data || !e.data.ok) return resolve(null);
-          const v = e.data.v;
-          let m = 0;
-          if (v.userAgent !== mainValues.userAgent) m++;
-          if (v.platform !== mainValues.platform) m++;
-          if (v.hardwareConcurrency !== mainValues.hardwareConcurrency) m++;
-          if (v.languages !== (mainValues.languages || []).join(',')) m++;
-          resolve(m);
-        };
-        w.onerror = () => { cleanup(); resolve(null); };
-        w.postMessage('go');
-      } catch (_) {
-        resolve(null);
-      }
-    });
-  }
-
   // ---- V1 surfaces ---------------------------------------------------------
   function getWebGL() {
     return safe(() => {
-      const c = document.createElement('canvas');
-      const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      let canvas = null;
+      if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        canvas = document.createElement('canvas');
+      } else if (typeof OffscreenCanvas !== 'undefined') {
+        canvas = new OffscreenCanvas(16, 16);
+      }
+      if (!canvas) return null;
+      const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
       if (!gl) return null;
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
       const vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
@@ -154,16 +121,402 @@
     }, null);
   }
 
-  function getClientHints() {
-    return safe(() => {
-      const uaData = navigator.userAgentData;
-      if (!uaData) return null;
-      return {
-        brands: uaData.brands,
-        platform: uaData.platform,
-        mobile: uaData.mobile,
+  async function getClientHints() {
+    const uaData = safe(() => navigator.userAgentData, null);
+    if (!uaData) return null;
+    let high = {};
+    if (typeof uaData.getHighEntropyValues === 'function') {
+      try {
+        high = await uaData.getHighEntropyValues([
+          'architecture',
+          'bitness',
+          'fullVersionList',
+          'model',
+          'platformVersion',
+        ]);
+      } catch (_) {
+        high = {};
+      }
+    }
+    const copyBrands = (value) => Array.isArray(value)
+      ? value.map((entry) => ({
+        brand: String(entry?.brand ?? ''),
+        version: String(entry?.version ?? ''),
+      }))
+      : null;
+    return {
+      brands: copyBrands(high.brands ?? uaData.brands) || [],
+      fullVersionList: copyBrands(high.fullVersionList),
+      platform: String(high.platform ?? uaData.platform ?? ''),
+      platformVersion: typeof high.platformVersion === 'string' ? high.platformVersion : null,
+      architecture: typeof high.architecture === 'string' ? high.architecture : null,
+      bitness: typeof high.bitness === 'string' ? high.bitness : null,
+      model: typeof high.model === 'string' ? high.model : null,
+      mobile: Boolean(high.mobile ?? uaData.mobile),
+    };
+  }
+
+  // ---- V3: cross-context consistency --------------------------------------
+  const REQUIRED_CONTEXTS = Object.freeze([
+    'main',
+    'same-origin-iframe',
+    'cross-origin-iframe',
+    'dedicated-worker',
+    'shared-worker',
+    'service-worker',
+  ]);
+  const CORE_CONTEXT_FIELDS = Object.freeze([
+    'navigator.userAgent',
+    'navigator.platform',
+    'navigator.languages',
+    'navigator.hardwareConcurrency',
+    'locale.timezone',
+    'locale.intlLocale',
+  ]);
+  const OPTIONAL_CONTEXT_FIELDS = Object.freeze([
+    'navigator.deviceMemory',
+    'clientHints.brands',
+    'clientHints.fullVersionList',
+    'clientHints.platform',
+    'clientHints.platformVersion',
+    'clientHints.architecture',
+    'clientHints.bitness',
+    'clientHints.model',
+    'clientHints.mobile',
+    'gpu.webglVendor',
+    'gpu.webglRenderer',
+  ]);
+  const CONTEXT_TIMEOUT_MS = 5000;
+
+  async function collectContextValues() {
+    const resolved = safe(() => Intl.DateTimeFormat().resolvedOptions(), {});
+    return {
+      navigator: {
+        userAgent: safe(() => navigator.userAgent, null),
+        platform: safe(() => navigator.platform, null),
+        languages: safe(() => Array.from(navigator.languages || []), null),
+        hardwareConcurrency: safe(() => navigator.hardwareConcurrency, null),
+        deviceMemory: safe(() => navigator.deviceMemory, null),
+        vendor: safe(() => navigator.vendor, null),
+      },
+      locale: {
+        timezone: typeof resolved.timeZone === 'string' ? resolved.timeZone : null,
+        intlLocale: typeof resolved.locale === 'string' ? resolved.locale : null,
+      },
+      clientHints: await getClientHints(),
+      gpu: getWebGL(),
+    };
+  }
+
+  function contextValuesValid(value) {
+    return value
+      && typeof value === 'object'
+      && !Array.isArray(value)
+      && typeof value.navigator?.userAgent === 'string'
+      && value.navigator.userAgent.length > 0
+      && typeof value.navigator?.platform === 'string'
+      && Array.isArray(value.navigator?.languages)
+      && value.navigator.languages.length > 0
+      && typeof value.navigator?.hardwareConcurrency === 'number'
+      && Number.isFinite(value.navigator.hardwareConcurrency)
+      && value.navigator.hardwareConcurrency > 0
+      && typeof value.locale?.timezone === 'string'
+      && value.locale.timezone.length > 0
+      && typeof value.locale?.intlLocale === 'string'
+      && value.locale.intlLocale.length > 0;
+  }
+
+  function shortReason(value) {
+    return String(value?.message ?? value ?? 'unknown error')
+      .replace(/[\r\n\t]+/g, ' ')
+      .slice(0, 240);
+  }
+
+  function boundedContext(name, setup) {
+    return new Promise((resolve) => {
+      let finished = false;
+      const cleanups = [];
+      const runCleanup = (cleanup) => {
+        try {
+          const result = cleanup();
+          if (result && typeof result.catch === 'function') result.catch(() => {});
+        } catch (_) {}
       };
-    }, null);
+      const addCleanup = (cleanup) => {
+        if (finished) {
+          runCleanup(cleanup);
+          return false;
+        }
+        cleanups.push(cleanup);
+        return true;
+      };
+      const finish = (record) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        for (const cleanup of cleanups.reverse()) {
+          runCleanup(cleanup);
+        }
+        resolve(record);
+      };
+      const timer = setTimeout(() => {
+        finish({ status: 'timeout', reason: `${name} did not answer within ${CONTEXT_TIMEOUT_MS}ms` });
+      }, CONTEXT_TIMEOUT_MS);
+      Promise.resolve()
+        .then(() => setup({
+          addCleanup,
+          finish,
+          isFinished: () => finished,
+        }))
+        .catch((error) => finish({ status: 'error', reason: shortReason(error) }));
+    });
+  }
+
+  function requestId() {
+    return safe(() => {
+      const words = new Uint32Array(4);
+      crypto.getRandomValues(words);
+      return Array.from(words, (word) => word.toString(16).padStart(8, '0')).join('');
+    }, `fallback-${Date.now()}-${Math.random()}`);
+  }
+
+  function responseRecord(event, expectedId) {
+    const data = event?.data;
+    if (!data
+        || data.type !== 'proteus-context-result'
+        || data.requestId !== expectedId) {
+      return null;
+    }
+    if (data.ok !== true || !contextValuesValid(data.values)) {
+      return {
+        status: 'error',
+        reason: shortReason(data.error || 'context returned malformed values'),
+      };
+    }
+    return { status: 'ok', values: data.values };
+  }
+
+  function frameContext(name, href) {
+    if (typeof document === 'undefined'
+        || typeof window === 'undefined'
+        || typeof MessageChannel === 'undefined') {
+      return Promise.resolve({ status: 'unsupported', reason: `${name} APIs are unavailable` });
+    }
+    return boundedContext(name, ({ addCleanup, finish }) => {
+      const id = requestId();
+      const url = new URL(href, location.href);
+      url.hash = id;
+      const expectedOrigin = url.origin;
+      const frame = document.createElement('iframe');
+      frame.hidden = true;
+      frame.setAttribute('aria-hidden', 'true');
+      frame.src = url.href;
+      addCleanup(() => frame.remove());
+      let port = null;
+      addCleanup(() => port?.close());
+      const onWindowMessage = (event) => {
+        if (event.source !== frame.contentWindow
+            || event.origin !== expectedOrigin
+            || event.data?.type !== 'proteus-context-ready'
+            || event.data?.requestId !== id) {
+          return;
+        }
+        window.removeEventListener('message', onWindowMessage);
+        const channel = new MessageChannel();
+        port = channel.port1;
+        port.onmessage = (message) => {
+          const record = responseRecord(message, id);
+          if (record) finish(record);
+        };
+        port.onmessageerror = () => finish({
+          status: 'error',
+          reason: `${name} returned an unreadable message`,
+        });
+        port.start();
+        frame.contentWindow.postMessage({
+          type: 'proteus-context-collect',
+          requestId: id,
+        }, expectedOrigin, [channel.port2]);
+      };
+      window.addEventListener('message', onWindowMessage);
+      addCleanup(() => window.removeEventListener('message', onWindowMessage));
+      frame.onerror = () => finish({ status: 'error', reason: `${name} failed to load` });
+      document.body.appendChild(frame);
+    });
+  }
+
+  function crossOriginFrameHref() {
+    if (typeof location === 'undefined'
+        || !['http:', 'https:'].includes(location.protocol)) {
+      return null;
+    }
+    const alternate = location.hostname === '127.0.0.1'
+      ? 'localhost'
+      : location.hostname === 'localhost'
+        ? '127.0.0.1'
+        : null;
+    if (!alternate) return null;
+    const url = new URL('./context-frame.html', location.href);
+    url.hostname = alternate;
+    return url.origin === location.origin ? null : url.href;
+  }
+
+  function dedicatedWorkerContext() {
+    if (typeof Worker === 'undefined') {
+      return Promise.resolve({ status: 'unsupported', reason: 'Dedicated Worker is unavailable' });
+    }
+    return boundedContext('dedicated-worker', ({ addCleanup, finish }) => {
+      const id = requestId();
+      const worker = new Worker('./context-worker.js', { name: 'proteus-context-dedicated' });
+      addCleanup(() => worker.terminate());
+      worker.onmessage = (event) => {
+        const record = responseRecord(event, id);
+        if (record) finish(record);
+      };
+      worker.onmessageerror = () => finish({
+        status: 'error',
+        reason: 'Dedicated Worker returned an unreadable message',
+      });
+      worker.onerror = (event) => finish({
+        status: 'error',
+        reason: shortReason(event.message || 'Dedicated Worker failed'),
+      });
+      worker.postMessage({ type: 'proteus-context-collect', requestId: id });
+    });
+  }
+
+  function sharedWorkerContext() {
+    if (typeof SharedWorker === 'undefined') {
+      return Promise.resolve({ status: 'unsupported', reason: 'Shared Worker is unavailable' });
+    }
+    return boundedContext('shared-worker', ({ addCleanup, finish }) => {
+      const id = requestId();
+      const worker = new SharedWorker('./context-worker.js', 'proteus-context-shared');
+      const port = worker.port;
+      addCleanup(() => port.close());
+      port.onmessage = (event) => {
+        const record = responseRecord(event, id);
+        if (record) finish(record);
+      };
+      port.onmessageerror = () => finish({
+        status: 'error',
+        reason: 'Shared Worker returned an unreadable message',
+      });
+      port.start();
+      port.postMessage({ type: 'proteus-context-collect', requestId: id });
+    });
+  }
+
+  async function waitForActivatedWorker(registration, isFinished) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (isFinished()) return null;
+      const worker = registration.active || registration.waiting || registration.installing;
+      if (worker?.state === 'activated') return worker;
+      if (worker?.state === 'redundant') throw new Error('Service Worker became redundant');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error('Service Worker did not activate');
+  }
+
+  function serviceWorkerContext() {
+    if (typeof navigator === 'undefined'
+        || !navigator.serviceWorker
+        || typeof MessageChannel === 'undefined') {
+      return Promise.resolve({ status: 'unsupported', reason: 'Service Worker is unavailable' });
+    }
+    return boundedContext('service-worker', async ({
+      addCleanup,
+      finish,
+      isFinished,
+    }) => {
+      const registration = await navigator.serviceWorker.register(
+        './context-worker.js',
+        { scope: './__proteus_context__/' },
+      );
+      if (!addCleanup(() => registration.unregister())) return;
+      const worker = await waitForActivatedWorker(registration, isFinished);
+      if (!worker || isFinished()) return;
+      const id = requestId();
+      const channel = new MessageChannel();
+      if (!addCleanup(() => channel.port1.close())) return;
+      channel.port1.onmessage = (event) => {
+        const record = responseRecord(event, id);
+        if (record) finish(record);
+      };
+      channel.port1.onmessageerror = () => finish({
+        status: 'error',
+        reason: 'Service Worker returned an unreadable message',
+      });
+      channel.port1.start();
+      worker.postMessage(
+        { type: 'proteus-context-collect', requestId: id },
+        [channel.port2],
+      );
+    });
+  }
+
+  function valueAt(object, path) {
+    return path.split('.').reduce(
+      (value, part) => value == null ? undefined : value[part],
+      object,
+    );
+  }
+
+  function sameValue(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  async function collectCrossContext(mainValues) {
+    const crossHref = crossOriginFrameHref();
+    const tasks = [
+      frameContext('same-origin-iframe', './context-frame.html'),
+      crossHref
+        ? frameContext('cross-origin-iframe', crossHref)
+        : Promise.resolve({
+          status: 'unsupported',
+          reason: 'a distinct loopback origin is unavailable',
+        }),
+      dedicatedWorkerContext(),
+      sharedWorkerContext(),
+      serviceWorkerContext(),
+    ];
+    const records = await Promise.all(tasks);
+    const contexts = {
+      main: contextValuesValid(mainValues)
+        ? { status: 'ok', values: mainValues }
+        : { status: 'error', reason: 'main context returned malformed values' },
+    };
+    REQUIRED_CONTEXTS.slice(1).forEach((name, index) => {
+      contexts[name] = records[index];
+    });
+    const mismatches = [];
+    if (contexts.main.status === 'ok') {
+      for (const name of REQUIRED_CONTEXTS.slice(1)) {
+        const record = contexts[name];
+        if (record.status !== 'ok') continue;
+        const fields = [...CORE_CONTEXT_FIELDS];
+        for (const field of OPTIONAL_CONTEXT_FIELDS) {
+          const expected = valueAt(mainValues, field);
+          const actual = valueAt(record.values, field);
+          if (expected != null || actual != null) fields.push(field);
+        }
+        for (const field of fields) {
+          const expected = valueAt(mainValues, field);
+          const actual = valueAt(record.values, field);
+          if (!sameValue(expected, actual)) {
+            mismatches.push({ context: name, field, expected, actual });
+          }
+        }
+      }
+    }
+    const complete = REQUIRED_CONTEXTS.every((name) => contexts[name]?.status === 'ok');
+    return {
+      schemaVersion: '1.0.0',
+      requiredContexts: [...REQUIRED_CONTEXTS],
+      contexts,
+      mismatches,
+      complete,
+    };
   }
 
   // ---- V5 automation tells (page-observable subset) -----------------------
@@ -192,13 +545,14 @@
 
   // ---- Assemble ------------------------------------------------------------
   async function collect() {
+    const mainValues = await collectContextValues();
     const nav = {
-      userAgent: safe(() => navigator.userAgent, ''),
-      platform: safe(() => navigator.platform, ''),
-      languages: safe(() => Array.from(navigator.languages || []), []),
-      hardwareConcurrency: safe(() => navigator.hardwareConcurrency, null),
-      deviceMemory: safe(() => navigator.deviceMemory, null),
-      vendor: safe(() => navigator.vendor, ''),
+      userAgent: mainValues.navigator.userAgent ?? '',
+      platform: mainValues.navigator.platform ?? '',
+      languages: mainValues.navigator.languages ?? [],
+      hardwareConcurrency: mainValues.navigator.hardwareConcurrency,
+      deviceMemory: mainValues.navigator.deviceMemory,
+      vendor: mainValues.navigator.vendor ?? '',
     };
     const screenObj = {
       width: safe(() => screen.width, null),
@@ -209,14 +563,18 @@
       devicePixelRatio: safe(() => window.devicePixelRatio, null),
     };
     const locale = {
-      timezone: safe(() => Intl.DateTimeFormat().resolvedOptions().timeZone, null),
+      timezone: mainValues.locale.timezone,
       acceptLanguage: null, // header-only; harness fills from the request it saw
-      intlLocale: safe(() => Intl.DateTimeFormat().resolvedOptions().locale, null),
+      intlLocale: mainValues.locale.intlLocale,
     };
+    const crossContext = await collectCrossContext(mainValues);
     const traces = {
       nonNativeToString: countNonNativeToString(),
       descriptorAnomalies: countDescriptorAnomalies(),
-      crossContextMismatches: await crossContextMismatches(nav),
+      crossContextMismatches: crossContext.complete
+        ? crossContext.mismatches.length
+        : null,
+      crossContext,
     };
 
     return {
@@ -224,9 +582,9 @@
       _collectedAt: new Date().toISOString(),
       navigator: nav,
       screen: screenObj,
-      gpu: getWebGL(),
+      gpu: mainValues.gpu,
       fonts: (function () { const f = detectFonts(); return f ? { set: f, policy: 'observed' } : null; })(),
-      clientHints: getClientHints(),
+      clientHints: mainValues.clientHints,
       locale: locale,
       traces: traces,
       automation: getAutomation(),
@@ -236,7 +594,7 @@
     };
   }
 
-  const api = { collect };
+  const api = { collect, collectContextValues };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.ProteusCollect = api;
 })(typeof self !== 'undefined' ? self : this);

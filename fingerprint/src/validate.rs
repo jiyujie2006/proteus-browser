@@ -5,8 +5,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use crate::GENERATOR_VERSION;
 use crate::dataset::Dataset;
 use crate::model::{
-    BrowserBrand, ConfigBody, DeviceClass, EngineFamily, NoiseAmplitude, OsName, RarityVerdict,
-    ValidationIssue, ValidationReport,
+    BrowserBrand, ConfigBody, CpuArch, DeviceClass, EngineFamily, NoiseAmplitude, OsName,
+    RarityVerdict, ValidationIssue, ValidationReport,
 };
 use crate::schema_contract::{
     is_canonical_f64, is_full_version, is_lower_hex_sha256, is_media_device_kind, is_seed,
@@ -58,6 +58,45 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
                 format!("seed is not valid standard base64: {error}"),
             ),
         }
+    }
+
+    if config.persona.os.name != OsName::Windows {
+        fail(
+            "R-PERSONA-TARGET",
+            &["persona.os.name"],
+            "M1A supports Windows personas only".into(),
+        );
+    }
+    if config.persona.os.version != "11" {
+        fail(
+            "R-PERSONA-TARGET",
+            &["persona.os.version"],
+            "M1A requires persona.os.version to be Windows 11".into(),
+        );
+    }
+    if config.persona.os.arch != CpuArch::X86_64 {
+        fail(
+            "R-PERSONA-TARGET",
+            &["persona.os.arch"],
+            "M1A requires the x86_64 CPU architecture".into(),
+        );
+    }
+    if !matches!(
+        config.persona.device.class,
+        DeviceClass::Desktop | DeviceClass::Laptop
+    ) {
+        fail(
+            "R-PERSONA-TARGET",
+            &["persona.device.class"],
+            "M1A supports desktop and laptop device classes only".into(),
+        );
+    }
+    if config.persona.device.model.is_some() {
+        fail(
+            "R-PERSONA-TARGET",
+            &["persona.device.model"],
+            "M1A requires persona.device.model to be null".into(),
+        );
     }
 
     if config.engine.major_version == 0 {
@@ -220,13 +259,13 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
             "engine majorVersion and fullVersion disagree".into(),
         );
     }
-    let target_known = dataset.engine_targets.iter().any(|target| {
+    let engine_target = dataset.engine_targets.iter().find(|target| {
         target.family == config.engine.family.as_str()
             && target.brand == config.engine.brand.as_str()
             && target.major_version == config.engine.major_version
             && target.full_version == config.engine.full_version
     });
-    if !target_known {
+    if engine_target.is_none() {
         fail(
             "R-VERSION-LIVE",
             &["engine"],
@@ -271,23 +310,18 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
         );
     }
     if config.persona.os.name == OsName::Windows
-        && !config.navigator.user_agent.contains("Windows NT 10.0")
+        && config.engine.brand == BrowserBrand::Chrome
+        && config.navigator.user_agent
+            != crate::generator::windows_chrome_user_agent(config.engine.major_version)
     {
         fail(
             "R-UA-CH",
-            &["persona.os.name", "navigator.userAgent"],
-            "Windows persona UA lacks the Windows NT 10.0 token".into(),
-        );
-    }
-    if !config
-        .navigator
-        .user_agent
-        .contains(&format!("Chrome/{}", config.engine.full_version))
-    {
-        fail(
-            "R-UA-CH",
-            &["navigator.userAgent", "engine.fullVersion"],
-            "UA does not carry the exact configured Chrome version".into(),
+            &[
+                "navigator.userAgent",
+                "engine.majorVersion",
+                "persona.os.name",
+            ],
+            "UA must exactly match the reduced Windows Chrome major.0.0.0 form".into(),
         );
     }
     let expected_vendor = dataset.vendor_by_family.get(config.engine.family.as_str());
@@ -329,6 +363,26 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
                     ),
                 );
             }
+            match engine_target.and_then(|target| {
+                target
+                    .platform_versions
+                    .get(config.persona.os.name.as_str())
+            }) {
+                Some(expected) if hints.platform_version == *expected => {}
+                Some(expected) => fail(
+                    "R-UA-CH",
+                    &["clientHints.platformVersion", "engine", "persona.os.name"],
+                    format!(
+                        "Client Hints platform version {} does not match engine target value {expected}",
+                        hints.platform_version
+                    ),
+                ),
+                None => fail(
+                    "R-UA-CH",
+                    &["clientHints.platformVersion", "engine", "persona.os.name"],
+                    "matching engine target has no platform version for the persona OS".into(),
+                ),
+            }
             let mobile = matches!(
                 config.persona.device.class,
                 DeviceClass::Tablet | DeviceClass::Phone
@@ -340,35 +394,25 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
                     "Client Hints mobile flag contradicts device class".into(),
                 );
             }
-            let expected_brand = match config.engine.brand {
-                BrowserBrand::Chrome => "Google Chrome",
-                BrowserBrand::Edge => "Microsoft Edge",
-                BrowserBrand::Brave => "Brave",
-                BrowserBrand::Opera => "Opera",
-                BrowserBrand::Firefox => "Firefox",
-            };
-            let major = config.engine.major_version.to_string();
-            if !hints
-                .brands
-                .iter()
-                .any(|item| item.brand == expected_brand && item.version == major)
-            {
-                fail(
-                    "R-UA-CH",
-                    &["clientHints.brands", "engine"],
-                    "Client Hints brands lack the configured brand/major".into(),
-                );
+            if let Some(target) = engine_target {
+                if hints.brands != target.client_hint_brands {
+                    fail(
+                        "R-UA-CH",
+                        &["clientHints.brands", "engine"],
+                        "Client Hints brands do not exactly match the ordered engine-target list"
+                            .into(),
+                    );
+                }
+                if hints.full_version_list != target.client_hint_full_version_list {
+                    fail(
+                        "R-UA-CH",
+                        &["clientHints.fullVersionList", "engine.fullVersion"],
+                        "Client Hints full-version-list does not exactly match the ordered engine-target list"
+                            .into(),
+                    );
+                }
             }
-            if !hints.full_version_list.iter().any(|item| {
-                item.brand == expected_brand && item.version == config.engine.full_version
-            }) {
-                fail(
-                    "R-UA-CH",
-                    &["clientHints.fullVersionList", "engine.fullVersion"],
-                    "Client Hints full-version-list lacks the exact engine version".into(),
-                );
-            }
-            if config.persona.os.arch == crate::model::CpuArch::X86_64
+            if config.persona.os.arch == CpuArch::X86_64
                 && (hints.architecture != "x86" || hints.bitness != "64")
             {
                 fail(
@@ -379,6 +423,20 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
                         "persona.os.arch",
                     ],
                     "Client Hints architecture/bitness contradict x86_64".into(),
+                );
+            }
+            if config.persona.os.name == OsName::Windows
+                && config.persona.os.arch == CpuArch::X86_64
+                && matches!(
+                    config.persona.device.class,
+                    DeviceClass::Desktop | DeviceClass::Laptop
+                )
+                && !hints.model.is_empty()
+            {
+                fail(
+                    "R-UA-CH",
+                    &["clientHints.model", "persona.os", "persona.device.class"],
+                    "Windows x86_64 desktop/laptop Client Hints model must be empty".into(),
                 );
             }
         }
@@ -399,16 +457,39 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
             "WebGL GPU profile is not valid for the persona OS".into(),
         );
     }
+    if gpu_profile.is_some_and(|profile| {
+        !profile
+            .allowed_device_classes
+            .contains(&config.persona.device.class)
+    }) {
+        fail(
+            "R-PLATFORM-GPU",
+            &[
+                "persona.os.name",
+                "persona.device.class",
+                "gpu.webglVendor",
+                "gpu.webglRenderer",
+            ],
+            "WebGL GPU profile is not valid for the persona OS and device class".into(),
+        );
+    }
+    if let Some(profile) = gpu_profile
+        && config.gpu.webgl_extensions != profile.webgl_extensions
+    {
+        fail(
+            "R-WEBGL-WEBGPU",
+            &["gpu.webglRenderer", "gpu.webglExtensions"],
+            "WebGL extensions do not exactly match the selected GPU profile".into(),
+        );
+    }
     match (gpu_profile, config.gpu.webgpu_adapter.as_ref()) {
         (Some(profile), Some(adapter))
-            if adapter.family != profile.family
-                || adapter.vendor != profile.webgpu_adapter.vendor
-                || adapter.device != profile.webgpu_adapter.device =>
+            if adapter != &profile.webgpu_adapter || adapter.family != profile.family =>
         {
             fail(
                 "R-WEBGL-WEBGPU",
                 &["gpu.webglRenderer", "gpu.webgpuAdapter"],
-                "WebGL and WebGPU identify different GPU profiles".into(),
+                "WebGPU adapter does not exactly match the selected WebGL GPU profile".into(),
             );
         }
         (Some(_), None) => fail(
@@ -427,20 +508,19 @@ pub fn validate(config: &ConfigBody, dataset: &Dataset) -> ValidationReport {
             tuples.iter().any(|tuple| {
                 tuple.width == config.screen.width
                     && tuple.height == config.screen.height
-                    && (tuple.dpr - config.screen.device_pixel_ratio).abs() < 0.001
+                    && tuple.dpr == config.screen.device_pixel_ratio
             })
         });
     if !screen_known
-        || config.screen.avail_width == 0
-        || config.screen.avail_height == 0
         || config.screen.color_depth != 24
-        || config.screen.avail_width > config.screen.width
-        || config.screen.avail_height >= config.screen.height
+        || config.screen.avail_width != config.screen.width
+        || config.screen.avail_height != config.screen.height.saturating_sub(40)
     {
         fail(
             "R-SCREEN-REAL",
             &["screen", "persona.device.class"],
-            "screen tuple, color depth, or available dimensions are not a valid seed mode".into(),
+            "screen tuple, color depth, and available dimensions must exactly match a seed mode"
+                .into(),
         );
     }
 

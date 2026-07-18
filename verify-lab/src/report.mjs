@@ -48,6 +48,16 @@ export function renderReport(scored, meta = {}) {
     lines.push(`  ${VECTOR_LABEL[v]} ${bar(info.score)} ${pct(info.score)}   ${detail}`);
   }
   lines.push('');
+  if (scored.coverage && !scored.coverage.complete) {
+    const missing = scored.coverage.missingRequiredRules || [];
+    lines.push(
+      `  Coverage: insufficient (${scored.coverage.requiredMeasured}/${scored.coverage.required} required rules measured)`,
+    );
+    if (missing.length > 0) {
+      lines.push(`            missing: ${missing.join(', ')}`);
+    }
+    lines.push('');
+  }
 
   if (scored.inconsistencies.length === 0) {
     lines.push('  Inconsistencies: none 🎉  (every measured coherence rule passed)');

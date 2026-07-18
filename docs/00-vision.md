@@ -90,6 +90,16 @@ These are explicit, falsifiable bets. If one is wrong, the plan changes.
   and actively rejecting over-unique fingerprints defeats the second-biggest
   detection vector (rarity), which most tools ignore entirely. See
   [tdd/02](tdd/02-fingerprint-engine.md).
+- **Bet 4b — The fleet must blend in too, and it must be *measured*.** Even
+  coherent, individually-common profiles can betray their origin if the whole
+  population a tool emits shares a learnable generator signature (V2b). We treat
+  fleet de-correlation as a first-class, adversarially-tested commitment — a
+  red-team classifier that tries to detect "made by Proteus" is a tracked
+  regression metric. This is the vector that historically kills popular stealth
+  tools, and almost nobody measures it. See
+  [tdd/02](tdd/02-fingerprint-engine.md) §9,
+  [tdd/06](tdd/06-verification-lab.md) §5a, and
+  [adr/0007](adr/0007-fleet-de-correlation.md).
 - **Bet 5 — Verifiable honesty is a moat.** A public, continuous regression
   dashboard and reproducible builds convert "trust us" into "check for
   yourself." Closed competitors structurally cannot match this. See
