@@ -13,18 +13,28 @@ funding (see [08-sustainability.md](08-sustainability.md)) set the real pace.
 This roadmap defines hard exits; a runnable scaffold is not the same as a
 completed milestone.
 
+- **Linux-first rollout adopted:** `M0-Linux` is the active, non-release
+  development checkpoint. It will use an owner-controlled, manually dispatched
+  self-hosted Actions runner to produce a Linux x64 bring-up build followed by
+  clean-root A/B comparisons. It is planned but has not passed. Host support for
+  macOS and Windows follows in a later platform-completion phase and does not
+  block Linux native-engine work after this checkpoint
+  ([ADR 0008](adr/0008-staged-platform-rollout.md)).
 - **M0 contracts and reference workflow ready:** the ruler, exact source/
   dependency/toolchain contracts, runtime packaging, artifact licenses/SBOM,
   GitHub-hosted six-run workflow definitions, OIDC/Sigstore predicates,
   aggregation, identity cross-checks, and hard gate are regression-tested.
-- **M0 production path and hard exit remain open:** the current hosted runner
-  class cannot provide Chromium-scale macOS build storage, while the
-  external-ephemeral controller, pinned key, post-destruction receipt channel,
-  and independent finalizer are not implemented. Consequently no signed,
-  independently reproducible Win/macOS/Linux A/B bundle set has passed the hard
-  gate. The sole active patch defaults Google-backed Network Time querying off;
-  it is not a complete de-Google claim. The 15 M1 and one M3 specifications
-  remain separate non-M0 backlogs. See [M0.md](../M0.md).
+- **The three-platform hard M0 remains open:** planning prose calls the existing
+  full exit `M0-Full`; its machine contracts and commands retain the name `M0`.
+  The current hosted runner class cannot provide Chromium-scale macOS build
+  storage, while the external-ephemeral controller, pinned key,
+  post-destruction receipt channel, and independent finalizer are not
+  implemented. Consequently no signed, independently reproducible
+  Win/macOS/Linux A/B bundle set has passed the hard gate. M0-Linux evidence
+  cannot substitute for it. The sole active patch defaults Google-backed
+  Network Time querying off; it is not a complete de-Google claim. The 15 M1
+  and one M3 specifications remain separate non-M0 backlogs. See
+  [M0.md](../M0.md).
 - **M1A config core complete:** the first non-UI, infrastructure-independent M1
   slice provides deterministic Rust config generation, strict validation,
   Ed25519 signing/fail-closed verification, fixed vectors, and independent Node
@@ -36,7 +46,10 @@ completed milestone.
 ## Milestone map
 
 ```
-M0  Foundations & the ruler        ── build pipeline + verification lab
+M0  Foundations & the ruler
+├─ M0-Linux Linux-only checkpoint   ─ active, non-release development gate
+├─ platform completion              ─ deferred macOS + Windows host support
+└─ M0-Full three-platform hard exit ─ six-build assurance
 M1  Single-profile proof           ── native fp surfaces + config channel + rules
 M2  Network layer & sidecar        ── proxy chain, tunnel-not-MITM, leak guards
 M3  Productization (v1.0)           ── Manager, storage, stealth CDP, importers
@@ -51,15 +64,29 @@ verification lab, not vibes.
 
 ## M0 — Foundations & the ruler
 
-**Current status:** contracts and a GitHub-hosted reference path are
-implemented; the production execution backend is incomplete. The hard gate
-stays red until a viable trusted runner path produces six real, independent
-three-platform A/B builds and authenticated live reports.
+**Current status:** the `M0-Linux` development checkpoint is adopted but has no
+runner workflow or real build evidence yet. The existing contracts and
+GitHub-hosted reference path implement the `M0-Full` assurance boundary; its
+production execution backend remains incomplete. The hard gate stays red until
+a viable trusted runner path produces six real, independent three-platform A/B
+builds and authenticated live reports.
 
 **Goal:** be able to build the engine reproducibly, and **measure** fingerprint
 quality objectively. Without the ruler, all later fingerprint work is blind.
 
 **Work**
+- Deliver in two explicitly different lanes:
+  - **M0-Linux developer lane:** a separate, manually dispatched Actions
+    workflow targets owner-controlled Linux x64 hardware. Manual shell builds
+    are iteration-only. Each run pins the exact `main` commit and performs the
+    complete fetch → patch → build → test → package → live-verify → records
+    pipeline.
+  - **M0-Full hard lane:** retain the existing three-platform, six-run contract,
+    authenticated builder identities, and independent lifecycle assurance
+    unchanged. M0-Linux records must use a different developer-attested
+    assurance label and cannot be accepted by the hard verifier. macOS and
+    Windows developer bring-up occurs after the Linux checkpoint and before
+    this full gate can run.
 - Chromium fork + the active layer0 Network Time default-off patch that
   **builds** on all three platforms via depot_tools/gn/ninja. The hard A/B
   evidence profile deliberately disables caller-supplied cache wrappers so a
@@ -78,7 +105,25 @@ quality objectively. Without the ruler, all later fingerprint work is blind.
   probe scaffolding and scoring + inconsistency extraction (tdd/06).
 - Threat-model→probe mapping stubbed so every later change has a test home.
 
-**Exit criteria**
+**M0-Linux checkpoint exit (non-release)**
+
+- One real integration build first succeeds on Linux x64 through the dedicated
+  Actions developer lane.
+- A and B then run from clean build roots for the same pinned `main` commit, and
+  their complete bundle trees match byte-for-byte.
+- Every run applies the exact source and active patch series, builds
+  `chrome` plus `components_unittests`, runs the Network Time assertions,
+  packages a runnable bundle, drives the artifact-derived ruler, and retains
+  dependency/toolchain locks, licenses, SBOM, manifest, and build records.
+- Evidence identifies the owner-controlled self-hosted lifecycle as
+  **developer-attested**. It does not claim independent builder trust, release
+  readiness, macOS/Windows host support, or
+  `full-bundle-builder-attested/v2`.
+- Passing this checkpoint unlocks Linux non-UI M1 implementation and runtime
+  testing. It does not make `npm run m0:milestone` green.
+
+**M0-Full hard exit criteria**
+
 - A signed, reproducible stock-ish build is produced by CI on Win/mac/Linux.
 - The verification lab runs headless in CI and scores a profile, listing
   inconsistencies.
@@ -94,7 +139,9 @@ improve or defend what you can't measure.
 
 **Current status:** not complete. M1A completes only the signed-config
 generation/validation/signing contract; native Chromium consumption and runtime
-surface proof are still absent.
+surface proof are still absent. The near-term host scope is Linux x64, beginning
+after M0-Linux; macOS and Windows implementation/parity follow without being
+removed from the eventual three-platform target.
 
 **Goal:** one profile that is **coherent and passes the suites**, produced
 natively via the config channel.
@@ -243,7 +290,10 @@ automation that keeps us on the treadmill.
 
 ## Sequencing rationale (why this order)
 
-1. **M0 before all** — measurement is the prerequisite for iteration.
+1. **The ruler before engine iteration** — M0-Linux must pass before Linux
+   native-engine runtime work is treated as enabled. macOS and Windows host work
+   follows that checkpoint. M0-Full remains mandatory before any three-platform
+   support, release, or supply-chain assurance claim.
 2. **M1 before network** — prove native coherence in JS first; it's the core bet.
 3. **M2 before product** — the network layer is the differentiator; prove it
    before polishing UX.

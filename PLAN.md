@@ -129,10 +129,17 @@ data contract is [`docs/schemas/profile-config.schema.json`](docs/schemas/profil
 
 **Prove "coherent + verifiable" before building anything pretty.**
 
-- **M0 — Foundations & the ruler:** reproducible Chromium build + verification lab.
+- **M0 — Foundations & the ruler:** reproducible Chromium build + verification
+  lab, delivered in platform stages. `M0-Linux` is the near-term, non-release
+  Linux-only development checkpoint. macOS and Windows host support follow;
+  the existing three-platform hard exit is called `M0-Full` in planning prose
+  and retains its current `M0` machine contracts
+  ([ADR 0008](docs/adr/0008-staged-platform-rollout.md)).
   *You can't improve what you can't measure.*
 - **M1 — Single-profile proof:** native surfaces + config channel + coherence
   rules → one profile passes every suite green with zero inconsistencies.
+  Linux implementation begins after `M0-Linux`; macOS and Windows runtime
+  parity follow in the platform-completion track.
 - **M2 — Network layer:** sidecar, tunnel-not-MITM → JA3/JA4/H2 match the claimed
   browser; no DNS/WebRTC leaks.
 - **M3 — Productization (v1.0):** Manager, encrypted storage, stealth CDP,
@@ -169,24 +176,27 @@ the license and adds no use restriction.
 
 ## Status & next step
 
-**Pre-alpha / non-UI core work in progress.** Two tracks must be kept separate:
+**Pre-alpha / non-UI core work in progress.** Three facts must be kept separate:
 
-- The M0 ruler, hard contracts, and GitHub-hosted reference workflow are
-  runnable/testable, but the production build path is not complete: the current
-  runner class lacks Chromium-scale macOS storage, and a trusted
-  external-ephemeral controller/finalizer has not been implemented. The hard
-  exit therefore cannot yet produce its six A/B builds. The sole active layer0
-  patch defaults Google-backed Network Time querying off; this is not complete
-  de-Googling. The 16 M1/M3 specifications are a separate backlog and do not
-  gate or hash into M0. See [`M0.md`](M0.md).
+- The active next checkpoint is `M0-Linux`: fetch, patch, build, package, and
+  run the live ruler on Linux x64 through a manually dispatched,
+  owner-controlled self-hosted Actions runner. Linux first gets a bring-up
+  build, then clean-root A/B runs whose complete bundles match. This is
+  developer-attested determinism evidence, not a release or supply-chain claim.
+- The existing M0 ruler, hard contracts, and GitHub-hosted reference workflow
+  remain the `M0-Full` assurance boundary. They still require six independent
+  A/B builds across Windows, macOS, and Linux. macOS and Windows host bring-up
+  are deferred until after the Linux checkpoint; `M0-Linux` cannot make
+  `npm run m0:milestone` green. The active Network Time patch is bounded, and
+  the 16 M1/M3 specifications remain a separate backlog. See [`M0.md`](M0.md).
 - The bounded **M1A signed-config core** is complete: deterministic Rust
   generation, strict structural and semantic validation, Ed25519 signing and
   fail-closed verification, fixed vectors, and independent Node conformance
   checks. See [`M1A.md`](M1A.md).
 
-M1A is not roadmap M1. The critical path remains a real Chromium checkout and
-build pipeline, followed by pre-script config ingest, protected trust-anchor and
-replay handling, native surfaces, and cross-context runtime tests. Manager/UI
-work remains a later M3 deliverable and is not part of the current slice. The
-milestone definitions in [`docs/06-roadmap.md`](docs/06-roadmap.md) remain
-unchanged.
+M1A is not roadmap M1. The critical path is now the separate `M0-Linux`
+development lane and its two clean Linux A/B builds, followed by pre-script
+config ingest, protected trust-anchor and replay handling, native surfaces, and
+cross-context runtime tests on Linux. macOS and Windows host work comes next.
+Manager/UI remains a later M3 deliverable, and the six-build `M0-Full` gate is
+preserved rather than silently weakened.
