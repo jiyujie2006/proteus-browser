@@ -10,13 +10,13 @@ Target: local-first · reproducible builds · native dual-engine · Apache-2.0
 
 ---
 
-> **Status: Pre-alpha, non-UI core work in progress.** The local verification
-> ruler/tooling scaffold is runnable, and the M1A deterministic signed-config
-> core is implemented and tested. The hard M0 milestone is **not complete**:
-> Chromium patches are still placeholders, and there are no signed,
-> independently reproducible Win/macOS/Linux engine bundles or
-> builder-attested live verification reports. No modified engine binary, native
-> Chromium integration, Manager, or UI is shipped. See
+> **Status: Pre-alpha, non-UI core work in progress.** The M0 ruler, hard
+> evidence contracts, and GitHub-hosted reference workflow are implemented, and
+> the M1A deterministic signed-config core is tested. The M0 production path is
+> still missing a viable Chromium-scale macOS runner or trusted
+> external-ephemeral controller/finalizer, so no six-build hard evidence set
+> exists. No fixture can substitute for it. No modified engine binary, native
+> fingerprint/config integration, Manager, or UI is shipped. See
 > [`M0.md`](M0.md), [`M1A.md`](M1A.md), and the
 > [roadmap](docs/06-roadmap.md).
 
@@ -109,14 +109,15 @@ docs/adr/        Architecture Decision Records — the load-bearing choices
 docs/schemas/    JSON Schemas for the profile config contract
 fingerprint/     Implemented M1A Rust config generator/validator/signer
 verify-lab/      Runnable local verification ruler and Node conformance tests
-engine-chromium/ Patch/build/tracking scaffold; patch bodies are placeholders
+engine-chromium/ M0 source/build/evidence pipeline; 1 active patch + 16 future specs
 scripts/         Local milestone gates and supporting tooling
 ```
 
 The remaining target code trees (`engine-firefox/`, `net-sidecar/`, `manager/`,
 `sync/`) arrive with their roadmap milestones. Existing directories do not
 imply that the corresponding milestone has passed: in particular,
-`engine-chromium/` is currently a fail-closed scaffold, not a patched browser.
+`engine-chromium/` contains a fail-closed build scaffold and one unapplied real
+layer0 patch, not a built or shipped patched browser.
 
 ## Where to start reading
 
@@ -135,10 +136,12 @@ imply that the corresponding milestone has passed: in particular,
 
 Proteus's own code is licensed under **Apache-2.0** (chosen over MIT for its
 explicit patent grant — see [`docs/adr/0001-license-apache-2.md`](docs/adr/0001-license-apache-2.md)).
-The current repository does not contain or distribute Chromium, Firefox,
-Camoufox, or modified engine binaries. Future engine distributions will remain
-subject to every applicable upstream and bundled-component license; the
-artifact-specific process is documented in
+The current repository contains no Chromium/Firefox source checkout and
+distributes no Chromium, Firefox, Camoufox, or modified engine binary. Its one
+active patch necessarily includes BSD-3-Clause Chromium diff context; the
+corresponding pinned license is included under `LICENSES/`. Future engine
+distributions will remain subject to every applicable upstream and
+bundled-component license; the artifact-specific process is documented in
 [`docs/10-third-party-licensing.md`](docs/10-third-party-licensing.md).
 [`NOTICE`](NOTICE) contains only current attribution notices. Contributions are
 accepted under the terms in [`CONTRIBUTING.md`](CONTRIBUTING.md).

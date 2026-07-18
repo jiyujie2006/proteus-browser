@@ -1,0 +1,357 @@
+name: M0 Chromium builder
+
+# One dispatch builds exactly one platform/slot. Hard-M0 requires six distinct
+# workflow runs (A/B for Win/macOS/Linux), so this intentionally is not a matrix.
+# `runner_labels_json` must select a GitHub-hosted runner with enough attached
+# storage for a Chromium checkout. Its OS-specific label must start with
+# linux-/ubuntu-, windows-, or macos-/darwin- so the API verifier can derive
+# the host OS; the hard verifier rejects self-hosted claims.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Contracted engine platform
+        required: true
+        type: choice
+        options:
+          - windows-x64
+          - macos-universal
+          - linux-x64
+      slot:
+        description: Independent reproducibility slot
+        required: true
+        type: choice
+        options:
+          - A
+          - B
+      runner_labels_json:
+        description: JSON hosted-runner label(s), including an OS-prefixed label (linux-/ubuntu-/windows-/macos-/darwin-)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: m0-builder-${{ inputs.platform }}-${{ inputs.slot }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
+    timeout-minutes: 360
+    env:
+      PROTEUS_PLATFORM: ${{ inputs.platform }}
+      PROTEUS_SLOT: ${{ inputs.slot }}
+      PROTEUS_ARTIFACT_ROOT: ${{ github.workspace }}/engine-chromium/artifacts
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require a fresh GitHub-hosted builder
+        if: runner.environment != 'github-hosted'
+        shell: bash
+        run: |
+          echo "Hard-M0 builder attestations require runner.environment=github-hosted." >&2
+          exit 1
+
+      - name: Check out the exact main-branch source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.22.2'
+          package-manager-cache: false
+
+      - name: Validate the API-verifiable runner label contract
+        shell: bash
+        env:
+          SELECTED_RUNNER_LABELS_JSON: ${{ inputs.runner_labels_json }}
+        run: |
+          node --input-type=module <<'NODE'
+          const selected = JSON.parse(process.env.SELECTED_RUNNER_LABELS_JSON);
+          const labels = typeof selected === 'string' ? [selected] : selected;
+          if (!Array.isArray(labels)
+              || labels.length === 0
+              || labels.some((label) => typeof label !== 'string')) {
+            throw new TypeError('runner_labels_json must be a string or string array');
+          }
+          const families = new Set();
+          for (const label of labels.map((value) => value.toLowerCase())) {
+            if (/^(?:linux|ubuntu)(?:$|[-_.])/.test(label)) families.add('linux-x64');
+            if (/^windows(?:$|[-_.])/.test(label)) families.add('windows-x64');
+            if (/^(?:darwin|macos)(?:$|[-_.])/.test(label)) families.add('macos-universal');
+          }
+          if (families.size !== 1 || !families.has(process.env.PROTEUS_PLATFORM)) {
+            throw new TypeError(
+              'runner labels must identify exactly the selected platform OS',
+            );
+          }
+          NODE
+
+      - name: Install locked verification dependencies
+        run: npm ci
+
+      - name: Verify immutable source/build contracts
+        shell: bash
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          npm run engine:baseline
+          npm run engine:build-contract
+          npm run engine:check-m0-series
+
+      - name: Choose short, fresh build roots (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          root="${PROTEUS_M0_WORK_ROOT:-${RUNNER_TEMP}/proteus-m0}"
+          case "$root" in /*) ;; *) echo "Build root must be absolute" >&2; exit 1 ;; esac
+          test ! -e "$root"
+          mkdir -p "$(dirname "$root")"
+          mkdir "$root"
+          echo "PROTEUS_SOURCE_ROOT=${root}/source" >>"$GITHUB_ENV"
+          echo "PROTEUS_DEPOT_TOOLS_ROOT=${root}/depot_tools" >>"$GITHUB_ENV"
+
+      - name: Choose short, fresh build roots (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $root = if ($env:PROTEUS_M0_WORK_ROOT) {
+            $env:PROTEUS_M0_WORK_ROOT
+          } elseif (Test-Path -LiteralPath 'D:\') {
+            'D:\p-m0'
+          } else {
+            Join-Path $env:RUNNER_TEMP 'p-m0'
+          }
+          if (-not [IO.Path]::IsPathFullyQualified($root)) {
+            throw 'Build root must be absolute.'
+          }
+          if (Test-Path -LiteralPath $root) {
+            throw "Build root must be fresh: $root"
+          }
+          New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+          "PROTEUS_SOURCE_ROOT=$(Join-Path $root 'source')" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PROTEUS_DEPOT_TOOLS_ROOT=$(Join-Path $root 'depot_tools')" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build pinned Linux Chromium
+        if: inputs.platform == 'linux-x64'
+        shell: bash
+        env:
+          PROTEUS_INSTALL_BUILD_DEPS: '1'
+        run: |
+          test "${RUNNER_OS}" = "Linux"
+          test "${RUNNER_ARCH}" = "X64"
+          engine-chromium/scripts/build-linux.sh \
+            --source-root "$PROTEUS_SOURCE_ROOT" \
+            --depot-tools-root "$PROTEUS_DEPOT_TOOLS_ROOT"
+
+      - name: Install controlled Linux Chromium sandbox
+        if: inputs.platform == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sandbox="$PROTEUS_SOURCE_ROOT/src/out/Proteus/chrome_sandbox"
+          installed_sandbox="/usr/local/lib/proteus-m0/chrome_sandbox"
+          test -f "$source_sandbox"
+          test ! -L "$source_sandbox"
+          sudo install -d -o root -g root -m 0755 \
+            "$(dirname "$installed_sandbox")"
+          sudo install -o root -g root -m 4755 \
+            "$source_sandbox" "$installed_sandbox"
+          test "$(stat -c '%u:%g:%a' "$installed_sandbox")" = "0:0:4755"
+          echo "PROTEUS_LINUX_SANDBOX=$installed_sandbox" >>"$GITHUB_ENV"
+
+      - name: Build pinned macOS universal Chromium
+        if: inputs.platform == 'macos-universal'
+        shell: bash
+        run: |
+          test "${RUNNER_OS}" = "macOS"
+          case "${RUNNER_ARCH}" in X64|ARM64) ;; *) exit 1 ;; esac
+          engine-chromium/scripts/build-macos.sh \
+            --source-root "$PROTEUS_SOURCE_ROOT" \
+            --depot-tools-root "$PROTEUS_DEPOT_TOOLS_ROOT"
+
+      - name: Build pinned Windows Chromium
+        if: inputs.platform == 'windows-x64'
+        shell: pwsh
+        run: |
+          if ($env:RUNNER_OS -ne 'Windows') {
+            throw 'windows-x64 selected a non-Windows runner.'
+          }
+          if ($env:RUNNER_ARCH -ne 'X64') {
+            throw 'windows-x64 requires an X64 runner.'
+          }
+          & engine-chromium/scripts/build-windows.ps1 `
+            -SourceRoot $env:PROTEUS_SOURCE_ROOT `
+            -DepotToolsRoot $env:PROTEUS_DEPOT_TOOLS_ROOT
+
+      - name: Finalize Linux/macOS bundle and records
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git_bin="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$(command -v git)")"
+          python_bin="$(node -e 'process.stdout.write(require("node:fs").realpathSync(process.argv[1]))' "$(command -v python3)")"
+          finalize_args=(
+            --platform "$PROTEUS_PLATFORM" \
+            --slot "$PROTEUS_SLOT" \
+            --source-root "$PROTEUS_SOURCE_ROOT" \
+            --depot-tools-root "$PROTEUS_DEPOT_TOOLS_ROOT" \
+            --artifact-root "$PROTEUS_ARTIFACT_ROOT" \
+            --git "$git_bin" \
+            --python "$python_bin"
+          )
+          if [ "$PROTEUS_PLATFORM" = "linux-x64" ]; then
+            finalize_args+=(--linux-sandbox "${PROTEUS_LINUX_SANDBOX:?}")
+          fi
+          engine-chromium/scripts/finalize-m0-build.sh "${finalize_args[@]}"
+
+      - name: Finalize Windows bundle and records
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = (Get-Command git.exe -CommandType Application |
+            Select-Object -First 1).Source
+          $python = (Get-Command python.exe -CommandType Application |
+            Select-Object -First 1).Source
+          & engine-chromium/scripts/finalize-m0-build.ps1 `
+            -Slot $env:PROTEUS_SLOT `
+            -SourceRoot $env:PROTEUS_SOURCE_ROOT `
+            -DepotToolsRoot $env:PROTEUS_DEPOT_TOOLS_ROOT `
+            -ArtifactRoot $env:PROTEUS_ARTIFACT_ROOT `
+            -Git $git `
+            -Python $python
+
+      - name: Create permission-preserving payload transport
+        shell: bash
+        run: |
+          payload="${RUNNER_TEMP}/m0-payload.tar"
+          test ! -e "$payload"
+          COPYFILE_DISABLE=1 tar -cf "$payload" \
+            -C "$PROTEUS_ARTIFACT_ROOT" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}"
+          test -s "$payload"
+          echo "PROTEUS_PAYLOAD=$payload" >>"$GITHUB_ENV"
+
+      - name: Upload immutable build payload
+        id: payload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m0-payload-${{ inputs.platform }}-${{ inputs.slot }}-attempt-${{ github.run_attempt }}
+          path: ${{ env.PROTEUS_PAYLOAD }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Bind GitHub API and inner-tar payload identities
+        shell: bash
+        env:
+          PAYLOAD_ARTIFACT_ID: ${{ steps.payload.outputs.artifact-id }}
+          PAYLOAD_ARTIFACT_DIGEST: ${{ steps.payload.outputs.artifact-digest }}
+        run: |
+          binding="${RUNNER_TEMP}/m0-payload-binding.json"
+          test ! -e "$binding"
+          node engine-chromium/scripts/m0-artifact-transport.mjs capture \
+            --repository "$GITHUB_REPOSITORY" \
+            --run-id "$GITHUB_RUN_ID" \
+            --artifact-id "$PAYLOAD_ARTIFACT_ID" \
+            --name "m0-payload-${PROTEUS_PLATFORM}-${PROTEUS_SLOT}-attempt-${GITHUB_RUN_ATTEMPT}" \
+            --action-digest "$PAYLOAD_ARTIFACT_DIGEST" \
+            --inner "$PROTEUS_PAYLOAD" \
+            --output "$binding"
+          echo "PROTEUS_PAYLOAD_BINDING=$binding" >>"$GITHUB_ENV"
+
+      - name: Resolve the current check-run ID
+        id: job
+        run: node engine-chromium/scripts/github-actions-job.mjs
+
+      - name: Prepare canonical attestation predicates
+        run: >-
+          node engine-chromium/scripts/m0-build-record.mjs prepare
+          --artifact-root "${{ env.PROTEUS_ARTIFACT_ROOT }}"
+          --platform "${{ inputs.platform }}"
+          --slot "${{ inputs.slot }}"
+          --run-id "${{ github.run_id }}"
+          --run-attempt "${{ github.run_attempt }}"
+          --check-run-id "${{ steps.job.outputs.check-run-id }}"
+          --artifact-binding "${{ env.PROTEUS_PAYLOAD_BINDING }}"
+          --runner-kind github-hosted
+          --source-digest "${{ github.sha }}"
+          --signer-digest "${{ github.sha }}"
+
+      - name: Attest SLSA provenance predicate
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/bundle-manifest.json
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/provenance-predicate.json
+          show-summary: false
+
+      - name: Attest build-derived CycloneDX SBOM
+        id: sbom
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/bundle-manifest.json
+          sbom-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/build-sbom.cdx.json
+          show-summary: false
+
+      - name: Attest Proteus hard-M0 build predicate
+        id: build_attestation
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/bundle-manifest.json
+          predicate-type: https://proteus.example/attestations/m0-build/v2
+          predicate-path: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/build-predicate.json
+          show-summary: false
+
+      - name: Stage raw Sigstore bundles without rewriting bytes
+        shell: bash
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+          BUILD_BUNDLE: ${{ steps.build_attestation.outputs.bundle-path }}
+          DEST: ${{ env.PROTEUS_ARTIFACT_ROOT }}/builds/${{ inputs.platform }}/${{ inputs.slot }}/records/attestations
+        run: |
+          node -e 'const f=require("node:fs"); const p=process.env; for (const [source,name] of [[p.PROVENANCE_BUNDLE,"provenance.sigstore.json"],[p.SBOM_BUNDLE,"sbom.sigstore.json"],[p.BUILD_BUNDLE,"build.sigstore.json"]]) f.copyFileSync(source, p.DEST + "/" + name, f.constants.COPYFILE_EXCL)'
+
+      - name: Complete the immutable build record
+        run: >-
+          node engine-chromium/scripts/m0-build-record.mjs complete
+          --artifact-root "${{ env.PROTEUS_ARTIFACT_ROOT }}"
+          --platform "${{ inputs.platform }}"
+          --slot "${{ inputs.slot }}"
+
+      - name: Create metadata transport
+        shell: bash
+        run: |
+          metadata="${RUNNER_TEMP}/m0-metadata.tar"
+          test ! -e "$metadata"
+          COPYFILE_DISABLE=1 tar -cf "$metadata" \
+            -C "$PROTEUS_ARTIFACT_ROOT" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}/records/build-predicate.json" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}/records/provenance-predicate.json" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}/records/build-record-core.json" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}/records/build-record.json" \
+            "builds/${PROTEUS_PLATFORM}/${PROTEUS_SLOT}/records/attestations"
+          test -s "$metadata"
+          echo "PROTEUS_METADATA=$metadata" >>"$GITHUB_ENV"
+
+      - name: Upload signed metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m0-metadata-${{ inputs.platform }}-${{ inputs.slot }}-attempt-${{ github.run_attempt }}
+          path: ${{ env.PROTEUS_METADATA }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

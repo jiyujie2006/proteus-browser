@@ -1,13 +1,15 @@
 name: M0 local scaffold gate
 
 # The local scaffold gate. Everything here runs WITHOUT a Chromium
-# checkout — it validates the ruler (verification lab), the patch-series contract,
-# the repository license-policy check, schema, and dry-run tracking control
+# checkout — it validates the ruler (verification lab), the active M0 series
+# independently of future backlogs, strict baseline, repository license policy,
+# schema, and dry-run tracking control
 # flow. A green run means the local scaffold is healthy; it does NOT satisfy the
 # hard M0 exit criteria in docs/06-roadmap.md.
 #
-# The actual Chromium build is a separate, infra-heavy workflow (not run on
-# hosted CI minutes) — see docs/tdd/05-build-and-tracking.md §2.
+# Full Chromium A/B builds stay in the separate infra-heavy m0-builder →
+# m0-aggregate → m0-hard-gate chain. This gate runs the portable contract suite
+# on all three hosted client OSes without pretending that it built Chromium.
 
 on:
   push:
@@ -32,7 +34,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '22'
+          node-version: '22.22.2'
           package-manager-cache: false
 
       - name: Install locked Node test dependencies
@@ -56,7 +58,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: '22'
+          node-version: '22.22.2'
           package-manager-cache: false
 
       - name: Install locked Node test dependencies
@@ -74,15 +76,54 @@ jobs:
         working-directory: verify-lab
         run: node bin/verify-lab.mjs m0-gate
 
-      - name: Engine — patch-series contract
+      - name: Engine — active M0 series contract
         working-directory: engine-chromium
-        run: node scripts/check-series.mjs
+        run: node scripts/check-series.mjs --active
+
+      - name: Engine — strict Chromium and depot_tools baseline
+        run: npm run engine:baseline
+
+      - name: Engine — immutable M0 build and trust contract
+        run: npm run engine:build-contract
+
+      - name: Engine — resolved dependency-lock regressions
+        run: npm run engine:dependency-lock-tests
+
+      - name: Engine — platform-native toolchain-lock regressions
+        run: npm run engine:toolchain-lock-tests
 
       - name: Engine — cross-platform fail-closed scaffold regressions
-        run: npm run engine:scaffold-honesty
+        run: npm run engine:m0-scaffold-honesty
+
+      - name: Engine — complete-bundle manifest regressions
+        run: npm run engine:bundle-tests
+
+      - name: Engine — build-derived artifact license bundle regressions
+        run: npm run engine:license-bundle-tests
+
+      - name: Engine — multi-architecture effective GN args regressions
+        run: npm run engine:effective-args-tests
+
+      - name: Engine — build-derived CycloneDX SBOM regressions
+        run: npm run engine:build-sbom-tests
+
+      - name: Engine — GN runtime-dependency package record regressions
+        run: npm run engine:package-record-tests
+
+      - name: Engine — canonical Actions build-record producer regressions
+        run: npm run engine:build-record-tests
+
+      - name: Engine — current Actions job binding regressions
+        run: npm run engine:github-actions-job-tests
+
+      - name: Engine — downloaded artifact staging regressions
+        run: npm run engine:artifact-staging-tests
 
       - name: Engine — bounded entrypoint-evidence verifier regressions
         run: npm run engine:evidence-tests
+
+      - name: Engine — complete-bundle evidence v2 verifier regressions
+        run: npm run engine:evidence-v2-tests
 
       - name: Repository — license policy and current-scope manifest
         run: npm run license:check
@@ -101,3 +142,77 @@ jobs:
 
       - name: Top-level local scaffold gate + milestone audit
         run: node scripts/m0-exit-criteria.mjs
+
+  m0-node-contracts:
+    name: M0 Node contracts (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.22.2'
+          package-manager-cache: false
+
+      - name: Install locked Node test dependencies
+        run: npm ci
+
+      - name: Engine — strict Chromium and depot_tools baseline
+        run: npm run engine:baseline
+
+      - name: Engine — immutable M0 build and trust contract
+        run: npm run engine:build-contract
+
+      - name: Engine — active M0 series contract
+        run: npm run engine:check-m0-series
+
+      - name: Engine — resolved dependency-lock regressions
+        run: npm run engine:dependency-lock-tests
+
+      - name: Engine — platform-native toolchain-lock regressions
+        run: npm run engine:toolchain-lock-tests
+
+      - name: Engine — complete-bundle manifest regressions
+        run: npm run engine:bundle-tests
+
+      - name: Engine — build-derived artifact license bundle regressions
+        run: npm run engine:license-bundle-tests
+
+      - name: Engine — multi-architecture effective GN args regressions
+        run: npm run engine:effective-args-tests
+
+      - name: Engine — build-derived CycloneDX SBOM regressions
+        run: npm run engine:build-sbom-tests
+
+      - name: Engine — GN runtime-dependency package record regressions
+        run: npm run engine:package-record-tests
+
+      - name: Engine — canonical Actions build-record producer regressions
+        run: npm run engine:build-record-tests
+
+      - name: Engine — current Actions job binding regressions
+        run: npm run engine:github-actions-job-tests
+
+      - name: Engine — downloaded artifact staging regressions
+        run: npm run engine:artifact-staging-tests
+
+      - name: Engine — bounded entrypoint-evidence verifier regressions
+        run: npm run engine:evidence-tests
+
+      - name: Engine — complete-bundle evidence v2 verifier regressions
+        run: npm run engine:evidence-v2-tests

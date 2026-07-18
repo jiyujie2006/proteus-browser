@@ -1,7 +1,8 @@
 # TDD 03 — Network Layer (Sidecar, Proxy, TLS/H2 Fidelity, Leak Guards)
 
 **Status:** Design · **Serves principles:** II, IV, V · **Threat vectors:** V4
-(cross-layer mismatch), plus DNS/WebRTC leaks feeding V1/V7
+(cross-layer mismatch), including TLS-in-TLS tunnel detection and ECH shape, plus
+DNS/WebRTC leaks feeding V1/V7
 
 This is Proteus's biggest differentiator. A flawless JavaScript fingerprint is
 undone by a single mismatched layer beneath it. Most high-volume tools ignore
@@ -126,6 +127,71 @@ on responsibility for keeping it byte-current with a real browser — a second
 treadmill. We prefer to let the real engine be the source of truth (Principle
 II/III) and reserve uTLS for the minority case.
 
+## 6a. TLS-in-TLS tunnel detection (an honest boundary, V4)
+
+Tunneling gives *correct* JA3/JA4 for free — but there is a distinct V4 signal a
+proxy-centric design must confront head-on: **TLS-in-TLS detection.** When the
+browser's TLS session is carried inside a CONNECT tunnel that is *itself* TLS
+(HTTPS proxy, or an inner browser TLS over an outer proxy TLS), the nesting has an
+observable timing and record-size signature. A sophisticated origin or on-path
+anti-bot can infer "this connection is tunneled through another TLS layer" from
+the *shape* of the traffic — record sizes, the handshake-within-payload timing,
+the burst pattern of the inner handshake — **without decrypting anything and
+regardless of whether JA3 matches.** Recent research and production anti-bot
+systems have demonstrated this against proxied clients specifically.
+
+**What we can honestly do:**
+- **Prefer tunnel topologies with less nesting.** A SOCKS5 or plain-CONNECT
+  upstream (no outer TLS to the proxy) does not create the TLS-in-TLS pattern that
+  an HTTPS-proxy hop does. Where the user's chain allows, the sidecar prefers the
+  topology with the smallest nesting signature and tells the user when their chain
+  forces an extra TLS layer.
+- **Reduce, not erase, the shape signal.** Where an outer TLS hop is unavoidable,
+  padding and record-size policies can blunt some of the size signal; we do not
+  claim they remove the timing signature.
+- **Measure it.** The verification lab's parity harness (tdd/06 §3, §3a) records
+  whether a controlled origin can distinguish a Proteus session as tunneled, so
+  this is a tracked signal, not a blind spot.
+
+**What we will not pretend:** we cannot make a proxied connection provably
+indistinguishable from a direct one against a determined on-path detector. Using a
+proxy is legitimate and common, but "invisibly proxied" is not a promise we make
+(threat model §4). This honesty *is* the Principle IV posture — we surface the
+residual risk rather than bury it.
+
+## 6b. ECH (Encrypted ClientHello) coherence (V4)
+
+ECH encrypts the true SNI (and increasingly other ClientHello contents) under a
+public key fetched via DNS (HTTPS/SVCB records), sending a benign outer name in
+the clear. Its deployment is growing, and it changes the network-fingerprint story
+in two ways that matter to us:
+
+- **ECH strengthens tunnel-not-MITM.** With more of the ClientHello encrypted,
+  there is even *less* for a MITM proxy to preserve correctly — a MITM that
+  terminates TLS cannot reproduce the real browser's ECH behavior, so the case for
+  tunneling (letting the real BoringSSL speak) gets stronger, not weaker.
+- **ECH presence/shape is itself a fingerprint (a fresh V4 tell).** Whether a
+  client attempts ECH, how it does GREASE-ECH (Chrome sends a GREASE ECH extension
+  even when it has no real config), the outer-SNI behavior, and the DNS lookups
+  that precede it are all observable. A claimed current Chrome that does **not**
+  do ECH+GREASE the way the real current Chrome of that version does is now
+  incoherent.
+
+**Design consequences for the sidecar:**
+- **Don't strip or rewrite ECH/GREASE.** Because we tunnel, the engine's real ECH
+  and GREASE-ECH pass through untouched — the correct default. The sidecar must
+  not helpfully "normalize" them.
+- **Keep the DNS path ECH-aware.** ECH configs arrive via HTTPS/SVCB DNS records;
+  our forced-DoH resolver (§5) must fetch and honor them through the tunnel so the
+  ECH the engine attempts matches what a real browser on that network would have
+  learned — and so the pre-handshake DNS pattern stays coherent with the exit.
+- **Coherence with the claimed version.** ECH behavior tracks Chromium version;
+  the tracking system (tdd/05) keeps build≈claim so ECH behavior matches by
+  construction. The uTLS fallback (§6), when used at all, must reproduce the
+  claimed version's ECH/GREASE, not a stale handshake.
+- **Measure it.** The parity harness (tdd/06) records ECH-attempt and GREASE shape
+  alongside JA3/JA4 so "ECH looks like the claimed Chrome" is a tracked probe.
+
 ## 7. QUIC / HTTP-3 policy
 
 - HTTP/3 presence and transport parameters are themselves a fingerprint. The
@@ -206,25 +272,34 @@ net-sidecar (one process per launched profile)
 | Engine (tdd/01) | Engine egresses only via sidecar; shares QUIC/WebRTC policy from config; never bypasses |
 | Fingerprint engine (tdd/02) | Consumes timezone/geo coherence (R-TZ-GEO); QUIC policy hint |
 | Manager (tdd/07) | Spawns/tears down sidecar; supplies upstream creds from proxy library; shows proxy quality/geo |
-| Verification lab (tdd/06) | JA3/JA4/JARM parity probe, H2 fingerprint probe, DNS-leak probe, WebRTC-leak probe |
+| Verification lab (tdd/06) | JA3/JA4/JARM parity, H2 fingerprint, ECH/GREASE parity, TLS-in-TLS exposure, DNS-leak, WebRTC-leak probes |
 
 ## 13. Testing strategy
 
 - **TLS parity:** capture the JA3/JA4 the origin sees for a Proteus profile vs. a
   real browser of the claimed identity; assert equality (default tunnel mode).
+- **ECH/GREASE parity:** assert the profile attempts ECH and emits GREASE-ECH the
+  same way the real claimed-version Chrome does; assert the outer-SNI/DNS pattern
+  is coherent with the exit (§6b).
+- **TLS-in-TLS exposure:** from a controlled origin, measure whether the session
+  is distinguishable as tunneled; track the residual signal per upstream topology
+  and assert the sidecar picks the least-nesting option available (§6a).
 - **H2 fingerprint:** compare SETTINGS/window/priority/pseudo-header order to the
   real browser's.
 - **DNS-leak:** assert no plaintext DNS escapes; resolution geolocates to exit.
 - **WebRTC-leak:** assert the real public/local IP never appears in candidates.
 - **Fail-closed:** kill the upstream mid-session; assert no direct egress.
-- **uTLS mode (when used):** assert the synthesized handshake matches the target
-  real browser's JA3/JA4 and doesn't drift.
+- **uTLS mode (when used):** assert the synthesized handshake (including ECH/
+  GREASE) matches the target real browser's JA3/JA4 and doesn't drift.
 
 ## 14. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
 | Someone "helpfully" adds MITM to inspect traffic | Architectural prohibition + tests asserting real-engine JA3 reaches origin |
+| TLS-in-TLS reveals the connection is tunneled | Prefer least-nesting topology; blunt size signal; measure and disclose honestly (§6a) — not claimed solved |
+| ECH/GREASE drifts from the claimed Chrome version | Tunnel passes real ECH through; tracking keeps build≈claim; parity probe (§6b) |
+| Sidecar "normalizes" ECH and breaks coherence | Explicit no-strip/no-rewrite rule; ECH passes through opaque like all TLS |
 | Engine build drifts from claimed version → TLS slightly off | Tracking keeps build≈claim; uTLS fallback for exact pin (§6) |
 | H3/UDP leaks around the tunnel | Explicit QUIC policy; disable-coherently option; UDP egress rules |
 | WebRTC over-stripping becomes a tell | "Look normal behind NAT" rule; probe both leak and normality |
@@ -237,5 +312,11 @@ net-sidecar (one process per launched profile)
   (wireguard-go) for portability in M2, revisit.
 - Whether to offer UDP/H3 tunneling in M2 or ship "H3-disabled-coherently" first
   and add H3 tunneling in M4.
+- How far TLS-in-TLS shape mitigation (§6a) is worth taking vs. simply disclosing
+  the residual signal and steering users to lower-nesting topologies — measure
+  the real distinguishability per upstream type first, then decide.
+- ECH rollout pace (§6b): how aggressively to track ECH behavior changes across
+  Chromium versions, and whether the parity harness needs its own ECH-config
+  fixture server.
 - Default DoH resolver choice and per-profile override UX.
 - How much proxy-reputation heuristics we bundle vs. leave to provider plugins.

@@ -41,11 +41,14 @@ node tools/drive-chrome.mjs
 
 # Emit a signed-evidence input report. Machine mode does NOT use `serve`: it
 # starts a private IPv4-loopback server for the fixed, hashed headless probe,
-# rejects --url, talks through CDP pipe fds 3/4, and must run inside an
-# externally enforced disposable runner.
+# rejects --url, talks through CDP pipe fds 3/4, and captures a bounded Chromium
+# NetLog which must show no default Google Network Time query during collection.
+# It must run inside an externally enforced disposable runner.
 node tools/drive-chrome.mjs --json --external-containment \
   --chrome /path/to/engine-executable \
-  --platform linux-x64 > /path/to/verification-report.json
+  --platform linux-x64 \
+  --linux-sandbox /root-owned/mode-4755/chrome_sandbox \
+  > /path/to/verification-report.json
 ```
 
 ## What it measures
@@ -90,11 +93,13 @@ src/
   selftest.mjs         runs every fixture against its declared _expect block
   reference.mjs        Node loader for the reference dataset
   reference-util.mjs   pure helpers (browser-safe, no node:fs)
+  browser-close.mjs    bounded Browser.close write/normal-exit protocol
   cdp-pipe.mjs         bounded NUL-framed CDP client over child fds 3/4
-  controlled-probe.mjs fixed two-file probe server + byte-level binding
+  controlled-probe.mjs fixed four-file probe server + byte-level binding
+  network-time-audit.mjs stable NetLog reader + default-query audit
   artifact-report.mjs  recomputed machine baseline report builder
 data/reference.json    coherence reference data (OS↔platform, GPU-per-OS, fonts, tz…)
-probe-page/            the offline, in-browser detection page (index.html + collect.js)
+probe-page/            offline collector plus bound iframe/worker context probes
 fixtures/              known-good / known-bad profiles; the lab tests itself on these
 tools/drive-chrome.mjs drive real headless Chrome and score its live fingerprint
 test/run-tests.mjs     integration: full Draft 2020-12 schema + reference/conformance checks
@@ -135,3 +140,7 @@ data-refresh concern.
   process that deliberately escapes its group or job. Machine mode therefore
   refuses to run without an externally enforced disposable VM/container/job;
   hard M0 additionally requires the builder/orchestrator to attest that boundary.
+- Linux machine mode also requires `--linux-sandbox` to name a canonical,
+  root-owned ordinary file with exact mode `4755`. The builder installs its
+  freshly built `chrome_sandbox` into a root-controlled directory and the
+  harness passes it through `CHROME_DEVEL_SANDBOX`; `--no-sandbox` is never used.

@@ -10,23 +10,37 @@ that must accompany a particular release artifact.
 ## Current repository status
 
 The current pre-alpha repository contains first-party Proteus source,
-documentation, tests, profile fixtures, and an engine build/patch scaffold. It
-does **not** contain or distribute:
+documentation, tests, profile fixtures, an engine build scaffold, and one
+Proteus-authored Chromium patch. The patch includes the minimum Chromium source
+context needed to change the pinned Network Time feature default. That context
+remains under Chromium's BSD 3-Clause License; the exact pinned license text is
+stored at
+[`LICENSES/Chromium-BSD-3-Clause.txt`](../LICENSES/Chromium-BSD-3-Clause.txt).
+The patch header binds the exact Chromium commit, path, blob, and source-file
+SHA-256.
+
+The repository does **not** contain or distribute:
 
 - a Chromium or Firefox source checkout;
 - a modified Chromium, Firefox, or Camoufox binary;
-- the ungoogled-chromium patch set;
+- the ungoogled-chromium patch set or any copied ungoogled-chromium payload;
 - uTLS, uquic, a Go network sidecar, or a Manager application; or
 - a release `licenses/` directory or a build-derived production SBOM.
 
-The files under `engine-chromium/patches/` currently contain Proteus-authored
-metadata and placeholder descriptions, not copied upstream patch payloads.
-JavaScript and Rust dependencies are resolved from their package-manager
-lockfiles and retain their own licenses. The repository does not vendor their
-source trees.
+The one active file under `engine-chromium/patches/layer0-degoogle/` contains a
+real Proteus-authored change plus BSD-licensed Chromium diff context. The M1/M3
+files remain Proteus-authored metadata-only specifications. JavaScript and Rust
+dependencies are resolved from their package-manager lockfiles and retain their
+own licenses. The repository does not vendor their source trees.
 
-[`NOTICE`](../NOTICE) therefore contains only attribution for the work that is
-present now. Planned dependencies must not be added to `NOTICE` in advance.
+The active patch only changes Chromium's Google-backed Network Time feature
+from enabled-by-default to disabled-by-default on desktop and Android. An
+explicit feature override can re-enable it. Neither the patch name nor its
+directory is a claim that the repository has completed a general de-Googling
+audit.
+
+[`NOTICE`](../NOTICE) contains only current Proteus and Chromium attribution.
+Planned dependencies must not be added to `NOTICE` in advance.
 
 ## Rules for future source and binary distributions
 

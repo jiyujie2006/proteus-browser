@@ -109,10 +109,17 @@ because the UI doesn't expose the raw contradiction surface (Principle I).
 
 ## 11. Signature UX touches (differentiators users feel)
 
-- **Blend-in score** — nobody else shows you how well you disappear into the
-  crowd.
+- **Blend-in score** — a visible measure of how well you disappear into the
+  crowd. A few open generators estimate plausibility internally; surfacing it to
+  the user as an actionable number is uncommon.
+- **"Too clean" nudge** — if a profile is *implausibly* tidy (freshly updated,
+  zero quirks), the app can say so and offer a realistic imperfection, because
+  real devices aren't perfect (tdd/02 §6a).
 - **Coherence warnings in context** — the app tells you *before* you get flagged
   that your timezone fights your proxy.
+- **Fleet spread, not clones** — creating many profiles gives you a crowd that
+  spreads across the real distribution rather than N copies of the same "safe"
+  persona; the app never silently hands everyone the same fingerprint (tdd/02 §9).
 - **Trust panel** — verify the build's provenance/signature from inside the app
   (Principle VI made tangible).
 - **Fingerprint aging & warm-up** — profiles that update and mature like real

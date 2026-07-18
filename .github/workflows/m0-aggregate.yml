@@ -1,0 +1,258 @@
+name: M0 aggregate
+
+# Hard-M0 intentionally takes six different builder run IDs. A and B therefore
+# come from separate fresh runners instead of two jobs sharing one workflow run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      windows_a_run_id:
+        description: Successful windows-x64/A builder run ID
+        required: true
+        type: string
+      windows_b_run_id:
+        description: Successful windows-x64/B builder run ID
+        required: true
+        type: string
+      macos_a_run_id:
+        description: Successful macos-universal/A builder run ID
+        required: true
+        type: string
+      macos_b_run_id:
+        description: Successful macos-universal/B builder run ID
+        required: true
+        type: string
+      linux_a_run_id:
+        description: Successful linux-x64/A builder run ID
+        required: true
+        type: string
+      linux_b_run_id:
+        description: Successful linux-x64/B builder run ID
+        required: true
+        type: string
+      runner_labels_json:
+        description: JSON string or array selecting a large GitHub-hosted verifier
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+  attestations: read
+
+concurrency:
+  group: m0-aggregate-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ fromJSON(inputs.runner_labels_json) }}
+    timeout-minutes: 120
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PROTEUS_ARTIFACT_ROOT: ${{ github.workspace }}/engine-chromium/artifacts
+    steps:
+      - name: Require a fresh GitHub-hosted verifier
+        shell: bash
+        run: |
+          test "${{ runner.environment }}" = "github-hosted"
+          test "$RUNNER_OS" = "Linux"
+          test "$RUNNER_ARCH" = "X64"
+
+      - name: Check out the exact main-branch policy
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22.22.2'
+          package-manager-cache: false
+
+      - name: Install locked verification dependencies
+        run: npm ci
+
+      - name: Install the source-policy-pinned GitHub CLI
+        shell: bash
+        run: |
+          archive="${RUNNER_TEMP}/gh_2.94.0_linux_amd64.tar.gz"
+          install_root="${RUNNER_TEMP}/trusted-gh"
+          curl --fail --silent --show-error --location \
+            --output "$archive" \
+            https://github.com/cli/cli/releases/download/v2.94.0/gh_2.94.0_linux_amd64.tar.gz
+          echo "a757f1ba6db18f4de8cbadb244843a5f89bc75b5e7c6fc127d2bd77fbd12ed62  $archive" |
+            sha256sum --check --strict
+          mkdir "$install_root"
+          tar -xzf "$archive" --strip-components=1 -C "$install_root"
+          gh_path="$(realpath "$install_root/bin/gh")"
+          gh_sha256="$(sha256sum "$gh_path" | cut -d ' ' -f 1)"
+          test -x "$gh_path"
+          echo "PROTEUS_GH_PATH=$gh_path" >>"$GITHUB_ENV"
+          echo "PROTEUS_EXPECTED_GH_SHA256=$gh_sha256" >>"$GITHUB_ENV"
+
+      - name: Preflight six distinct trusted builder runs
+        shell: bash
+        env:
+          WINDOWS_A: ${{ inputs.windows_a_run_id }}
+          WINDOWS_B: ${{ inputs.windows_b_run_id }}
+          MACOS_A: ${{ inputs.macos_a_run_id }}
+          MACOS_B: ${{ inputs.macos_b_run_id }}
+          LINUX_A: ${{ inputs.linux_a_run_id }}
+          LINUX_B: ${{ inputs.linux_b_run_id }}
+        run: |
+          declare -A seen=()
+          for run_id in \
+            "$WINDOWS_A" "$WINDOWS_B" "$MACOS_A" "$MACOS_B" \
+            "$LINUX_A" "$LINUX_B"
+          do
+            [[ "$run_id" =~ ^[1-9][0-9]{0,19}$ ]]
+            test -z "${seen[$run_id]:-}"
+            seen[$run_id]=1
+            "$PROTEUS_GH_PATH" api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '[
+                .head_sha,
+                .head_branch,
+                .event,
+                .status,
+                .conclusion,
+                .path,
+                .run_attempt
+              ] | @tsv' |
+              while IFS=$'\t' read -r \
+                sha branch event status conclusion path run_attempt
+              do
+                test "$sha" = "$GITHUB_SHA"
+                test "$branch" = "main"
+                test "$event" = "workflow_dispatch"
+                test "$status" = "completed"
+                test "$conclusion" = "success"
+                case "$path" in
+                  .github/workflows/m0-builder.yml | \
+                  .github/workflows/m0-builder.yml@refs/heads/main) ;;
+                  *) exit 1 ;;
+                esac
+                [[ "$run_attempt" =~ ^[1-9][0-9]{0,8}$ ]]
+              done
+          done
+
+      - name: Download and assemble builder payloads
+        shell: bash
+        env:
+          WINDOWS_A: ${{ inputs.windows_a_run_id }}
+          WINDOWS_B: ${{ inputs.windows_b_run_id }}
+          MACOS_A: ${{ inputs.macos_a_run_id }}
+          MACOS_B: ${{ inputs.macos_b_run_id }}
+          LINUX_A: ${{ inputs.linux_a_run_id }}
+          LINUX_B: ${{ inputs.linux_b_run_id }}
+        run: |
+          assembly="${RUNNER_TEMP}/m0-assembly"
+          downloads="${RUNNER_TEMP}/m0-downloads"
+          mkdir "$assembly" "$downloads"
+          specs=(
+            "windows-x64 A $WINDOWS_A"
+            "windows-x64 B $WINDOWS_B"
+            "macos-universal A $MACOS_A"
+            "macos-universal B $MACOS_B"
+            "linux-x64 A $LINUX_A"
+            "linux-x64 B $LINUX_B"
+          )
+          for spec in "${specs[@]}"
+          do
+            read -r platform slot run_id <<<"$spec"
+            destination="${downloads}/${platform}-${slot}"
+            mkdir "$destination"
+            metadata_tar="${destination}/m0-metadata.tar"
+            metadata_tree="${destination}/metadata-tree"
+            payload_tar="${destination}/m0-payload.tar"
+            payload_tree="${destination}/payload-tree"
+            run_attempt="$("$PROTEUS_GH_PATH" api \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              --jq '.run_attempt')"
+            [[ "$run_attempt" =~ ^[1-9][0-9]{0,8}$ ]]
+            node engine-chromium/scripts/m0-artifact-transport.mjs \
+              fetch-named \
+              --repository "$GITHUB_REPOSITORY" \
+              --run-id "$run_id" \
+              --name "m0-metadata-${platform}-${slot}-attempt-${run_attempt}" \
+              --inner-name m0-metadata.tar \
+              --output "$metadata_tar" \
+              --kind metadata
+            node engine-chromium/scripts/m0-artifact-transport.mjs extract \
+              --archive "$metadata_tar" \
+              --destination "$metadata_tree" \
+              --kind metadata \
+              --platform "$platform" \
+              --slot "$slot"
+            record="${metadata_tree}/builds/${platform}/${slot}/records/build-record.json"
+            node engine-chromium/scripts/m0-artifact-transport.mjs \
+              fetch-bound \
+              --repository "$GITHUB_REPOSITORY" \
+              --run-id "$run_id" \
+              --platform "$platform" \
+              --slot "$slot" \
+              --record "$record" \
+              --inner-name m0-payload.tar \
+              --output "$payload_tar"
+            node engine-chromium/scripts/m0-artifact-transport.mjs extract \
+              --archive "$payload_tar" \
+              --destination "$payload_tree" \
+              --kind payload \
+              --platform "$platform" \
+              --slot "$slot"
+            node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+              --source "$payload_tree" \
+              --destination "$assembly"
+            node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+              --source "$metadata_tree" \
+              --destination "$assembly"
+            rm "$payload_tar" "$metadata_tar"
+          done
+          node engine-chromium/scripts/validate-artifact-staging.mjs \
+            --root "$assembly"
+          node engine-chromium/scripts/m0-artifact-transport.mjs merge \
+            --source "$assembly" \
+            --destination "$PROTEUS_ARTIFACT_ROOT"
+
+      - name: Build and verify the canonical hard-M0 evidence index
+        shell: bash
+        env:
+          PROTEUS_EXPECTED_SOURCE_DIGEST: ${{ github.sha }}
+          PROTEUS_EXPECTED_SIGNER_DIGEST: ${{ github.sha }}
+        run: |
+          node engine-chromium/scripts/m0-build-record.mjs aggregate \
+            --artifact-root "$PROTEUS_ARTIFACT_ROOT" \
+            --source-digest "$GITHUB_SHA" \
+            --signer-digest "$GITHUB_SHA" \
+            --output "$PROTEUS_ARTIFACT_ROOT/m0-build-evidence-v2.json"
+          node scripts/m0-evidence-v2.mjs --repo "$GITHUB_WORKSPACE"
+
+      - name: Create the hard-gate index transport
+        shell: bash
+        run: |
+          index="${RUNNER_TEMP}/m0-index.tar"
+          tar -cf "$index" \
+            -C "$PROTEUS_ARTIFACT_ROOT" \
+            m0-build-evidence-v2.json \
+            builds/windows-x64/A/records \
+            builds/windows-x64/B/records \
+            builds/macos-universal/A/records \
+            builds/macos-universal/B/records \
+            builds/linux-x64/A/records \
+            builds/linux-x64/B/records
+          test -s "$index"
+          echo "PROTEUS_INDEX=$index" >>"$GITHUB_ENV"
+
+      - name: Upload verified hard-M0 index
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: m0-index-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ env.PROTEUS_INDEX }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

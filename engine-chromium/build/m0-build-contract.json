@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "1.0.0",
+  "milestone": "M0",
+  "assuranceLevel": "full-bundle-builder-attested/v2",
+  "source": {
+    "chromiumRepository": "https://chromium.googlesource.com/chromium/src.git",
+    "chromiumVersion": "150.0.7871.124",
+    "chromiumCommit": "9261fd0a595ac4964ea84e6bd4a025c1173a2ffa",
+    "depotToolsRepository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+    "depotToolsCommit": "523cac151f2d6c6d0849f35753613864fc38850f"
+  },
+  "patches": {
+    "profile": "m0-layer0-v1",
+    "activeSeriesSha256": "bfeae5c48ee6a93544c6145317b12ff5cff4ba3540f45e971a4157c256c2aced"
+  },
+  "gn": {
+    "template": "engine-chromium/build/args.gn",
+    "templateSha256": "3a2fbe5d768fee091bbf97fa8c5b4520be47f3bc82ab5d2a3f0cc3f212790cb6",
+    "effectiveArgsCommand": "gn args <out-dir> --list --short",
+    "cachePolicy": "disabled"
+  },
+  "bundle": {
+    "manifestSchemaVersion": "1.0.0",
+    "comparison": "unsigned-complete-tree-sha256",
+    "runtimeDependencyCommand": "gn desc <out-dir> chrome runtime_deps",
+    "transportArchivesAreEvidenceSubjects": false
+  },
+  "platforms": {
+    "windows-x64": {
+      "hostPlatform": "win32",
+      "architectures": [
+        "x86_64"
+      ],
+      "buildTargets": [
+        "chrome",
+        "components_unittests"
+      ],
+      "entrypoint": "chrome.exe",
+      "independentBuilds": 2
+    },
+    "macos-universal": {
+      "hostPlatform": "darwin",
+      "architectures": [
+        "x86_64",
+        "arm64"
+      ],
+      "buildTargets": [
+        "chrome",
+        "components_unittests"
+      ],
+      "entrypoint": "Chromium.app/Contents/MacOS/Chromium",
+      "independentBuilds": 2,
+      "universalizer": "chrome/installer/mac/universalizer.py"
+    },
+    "linux-x64": {
+      "hostPlatform": "linux",
+      "architectures": [
+        "x86_64"
+      ],
+      "buildTargets": [
+        "chrome",
+        "components_unittests"
+      ],
+      "entrypoint": "chrome",
+      "independentBuilds": 2
+    }
+  },
+  "requiredRecords": [
+    "resolved-dependency-lock",
+    "effective-gn-args",
+    "complete-toolchain-lock",
+    "runtime-dependency-package-record",
+    "complete-bundle-manifest",
+    "build-derived-cyclonedx-sbom",
+    "artifact-license-bundle",
+    "artifact-driven-live-report",
+    "slsa-provenance-attestation",
+    "sbom-attestation",
+    "proteus-build-attestation",
+    "raw-sigstore-bundles"
+  ]
+}

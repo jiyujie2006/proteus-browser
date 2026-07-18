@@ -16,7 +16,8 @@ import { gpuFamilyOf, normalizeGpuFamilyForOs } from './reference-util.mjs';
 // Increment whenever the meaning or membership of the normative rule catalog
 // changes. Generated configs record this value in provenance, and the
 // cross-language conformance gate rejects drift from the shared dataset.
-export const RULES_VERSION = '1.0.0';
+export const RULES_VERSION = '1.1.0';
+const CONFIG_GENERATOR_VERSION = '0.2.0';
 
 /**
  * @typedef {Object} RuleResult
@@ -33,6 +34,57 @@ const na = (id, vector, weight = 1) => ({ id, vector, status: 'na', fields: [], 
 const bad = (id, vector, fields, reason, weight = 1) => ({ id, vector, status: 'fail', fields, reason, weight });
 
 // ------------------------------------------------------------------ V1 rules
+
+/**
+ * R-CONFIG-SCHEMA: the dependency-free score path enforces minimum envelope
+ * completeness before semantic rules run. Full types, formats, enums, and
+ * conditional shape remain owned by the normative Draft 2020-12 schema gate.
+ */
+function rConfigSchema(fp) {
+  if (fp.scope !== 'config') return na('R-CONFIG-SCHEMA', 'V1', 3);
+  const contract = fp.configContract;
+  if (!contract || !Array.isArray(contract.presentFields)) {
+    return bad('R-CONFIG-SCHEMA', 'V1', ['config'],
+      'config input is missing normalized contract metadata', 3);
+  }
+  const requiredFields = [
+    'schemaVersion',
+    'profileId',
+    'seed',
+    'engine',
+    'persona',
+    'navigator',
+    'clientHints',
+    'screen',
+    'gpu',
+    'fonts',
+    'media',
+    'locale',
+    'performance',
+    'noise',
+    'network',
+    'rarity',
+    'provenance',
+    'signature',
+  ];
+  const present = new Set(contract.presentFields);
+  const missing = requiredFields.filter((field) => !present.has(field));
+  const invalid = [];
+  if (fp.schemaVersion !== '1.0.0') invalid.push('schemaVersion');
+  if (typeof contract.profileId !== 'string') invalid.push('profileId');
+  if (typeof contract.seed !== 'string') invalid.push('seed');
+  if (contract.network == null || typeof contract.network !== 'object') invalid.push('network');
+  if (contract.signature == null || typeof contract.signature !== 'object') invalid.push('signature');
+  const fields = [
+    ...missing.map((field) => `config.${field}`),
+    ...invalid.map((field) => `config.${field}`),
+  ];
+  return fields.length === 0
+    ? ok('R-CONFIG-SCHEMA', 'V1', 3)
+    : bad('R-CONFIG-SCHEMA', 'V1', [...new Set(fields)],
+      `config is not a complete supported Profile Config envelope: ${[...new Set(fields)].join(', ')}`,
+      3);
+}
 
 /** R-PLATFORM-GPU: navigator.platform's OS must permit the WebGL GPU vendor family. */
 function rPlatformGpu(fp, ref) {
@@ -66,9 +118,76 @@ function rPlatformOs(fp, ref) {
         2);
 }
 
+/**
+ * R-PERSONA-TARGET: a current generated config must stay inside the implemented
+ * M1A persona boundary. Runtime observations and non-catalog fixtures retain
+ * the broader reference rules below.
+ */
+function rPersonaTarget(fp, ref) {
+  if (!isM1AConfig(fp)) {
+    return na('R-PERSONA-TARGET', 'V1', 3);
+  }
+  const expected = {
+    'persona.os.name': 'Windows',
+    'persona.os.version': '11',
+    'persona.os.arch': 'x86_64',
+    'persona.device.model': null,
+  };
+  const mismatches = Object.entries(expected)
+    .filter(([path, value]) => path.split('.').reduce(
+      (current, part) => current == null ? undefined : current[part],
+      fp,
+    ) !== value)
+    .map(([path]) => path);
+  if (!['desktop', 'laptop'].includes(fp.persona?.device?.class)) {
+    mismatches.push('persona.device.class');
+  }
+  return mismatches.length === 0
+    ? ok('R-PERSONA-TARGET', 'V1', 3)
+    : bad('R-PERSONA-TARGET', 'V1', mismatches,
+      `config persona is outside the implemented Windows 11 x86_64 desktop/laptop target: ${mismatches.join(', ')}`,
+      3);
+}
+
 function versionMajor(value) {
   const match = String(value ?? '').match(/^(\d+)/);
   return match ? Number(match[1]) : null;
+}
+
+function exactValue(actual, expected) {
+  if (Object.is(actual, expected)) return true;
+  if (Array.isArray(actual) || Array.isArray(expected)) {
+    return Array.isArray(actual)
+      && Array.isArray(expected)
+      && actual.length === expected.length
+      && actual.every((value, index) => exactValue(value, expected[index]));
+  }
+  if (actual === null || expected === null
+      || typeof actual !== 'object' || typeof expected !== 'object') {
+    return false;
+  }
+  const actualKeys = Object.keys(actual).sort();
+  const expectedKeys = Object.keys(expected).sort();
+  return exactValue(actualKeys, expectedKeys)
+    && actualKeys.every((key) => exactValue(actual[key], expected[key]));
+}
+
+function matchingEngineTarget(fp, ref) {
+  if (!Array.isArray(ref?.engineTargets)) return null;
+  return ref.engineTargets.find((target) =>
+    target?.family === fp.engine?.family
+      && target?.brand === fp.engine?.brand
+      && Number(target?.majorVersion) === Number(fp.engine?.majorVersion)
+      && String(target?.fullVersion) === String(fp.engine?.fullVersion)) || null;
+}
+
+/**
+ * Every config-scope input uses generation-strict semantics. Completeness is
+ * checked separately by R-CONFIG-SCHEMA; no removable body field is allowed to
+ * act as an escape hatch into the tolerant runtime path.
+ */
+export function isM1AConfig(fp) {
+  return fp?.scope === 'config';
 }
 
 function uaVersionForBrand(ua, brand) {
@@ -111,12 +230,36 @@ function findClientHintBrand(entries, aliases) {
   return entries.find((entry) => wanted.has(String(entry?.brand || '').toLowerCase())) || null;
 }
 
+function expectedClientHintCpu(fp) {
+  const configured = String(fp.persona?.os?.arch || '').toLowerCase();
+  const ua = String(fp.navigator?.userAgent || '').toLowerCase();
+  const platform = String(fp.navigator?.platform || '').toLowerCase();
+  const source = configured || `${ua} ${platform}`;
+  if (/arm64|aarch64/u.test(source)) {
+    return { architecture: 'arm', bitness: '64' };
+  }
+  if (/x86_64|x64|win64|amd64/u.test(source)) {
+    return { architecture: 'x86', bitness: '64' };
+  }
+  if (/x86|i[3-6]86/u.test(source)) {
+    return { architecture: 'x86', bitness: '32' };
+  }
+  return null;
+}
+
 /** R-UA-CH: the UA string, the claimed brand, and Client Hints must agree, same family. */
 function rUaCh(fp, ref) {
   const ua = fp.navigator?.userAgent;
   const brand = fp.engine?.brand;
   const family = fp.engine?.family;
   if (!ua || !brand) return na('R-UA-CH', 'V1', 3);
+  const requestUa = fp.context?.requestUserAgent;
+  if (typeof requestUa === 'string' && requestUa !== ua) {
+    return bad('R-UA-CH', 'V1',
+      ['navigator.userAgent', 'context.requestUserAgent'],
+      `HTTP User-Agent differs from navigator.userAgent: "${requestUa}" versus "${ua}"`,
+      3);
+  }
   const fields = [];
   let reason = '';
 
@@ -242,6 +385,62 @@ function rUaCh(fp, ref) {
       `Client Hints full version "${fullEntry.version}" contradicts engine.fullVersion "${fullVersion}"`, 3);
   }
 
+  const target = matchingEngineTarget(fp, ref);
+  if (target && Object.hasOwn(target.platformVersions || {}, os)) {
+    if (fp.scope === 'config' && brand === 'Chrome' && os === 'Windows') {
+      const expectedUa =
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        + 'AppleWebKit/537.36 (KHTML, like Gecko) '
+        + `Chrome/${engineMajor}.0.0.0 Safari/537.36`;
+      if (ua !== expectedUa) {
+        return bad('R-UA-CH', 'V1',
+          ['navigator.userAgent', 'engine.majorVersion', 'persona.os.name'],
+          `config UA differs from the exact reduced Windows Chrome target: "${ua}"`,
+          3);
+      }
+    }
+    const targetPlatform = {
+      Windows: 'Windows',
+      macOS: 'macOS',
+      Linux: 'Linux',
+      ChromeOS: 'Chrome OS',
+      Android: 'Android',
+    }[os] || os;
+    const cpu = expectedClientHintCpu(fp);
+    if (!cpu) {
+      return bad('R-UA-CH', 'V1',
+        [
+          'persona.os.arch',
+          'navigator.userAgent',
+          'navigator.platform',
+          'clientHints.architecture',
+          'clientHints.bitness',
+        ],
+        'Client Hints architecture/bitness cannot be bound to the claimed CPU architecture',
+        3);
+    }
+    const expected = {
+      brands: target.clientHintBrands,
+      fullVersionList: target.clientHintFullVersionList,
+      platform: targetPlatform,
+      platformVersion: target.platformVersions?.[os],
+      architecture: cpu.architecture,
+      bitness: cpu.bitness,
+      model: fp.persona?.device?.model ?? '',
+      mobile: expectedMobile,
+    };
+    const mismatches = Object.entries(expected)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .filter(([field, value]) => !exactValue(ch[field], value))
+      .map(([field]) => field);
+    if (mismatches.length > 0) {
+      return bad('R-UA-CH', 'V1',
+        mismatches.map((field) => `clientHints.${field}`),
+        `Client Hints fields differ from the exact ${brand} ${fullVersion} dataset target: ${mismatches.join(', ')}`,
+        3);
+    }
+  }
+
   return ok('R-UA-CH', 'V1', 3);
 }
 
@@ -330,6 +529,29 @@ function rLang(fp, ref) {
       ['navigator.languages', 'locale.intlLocale'],
       `navigator.languages[0] "${langs[0]}" contradicts Intl locale "${intlLocale}"`, 1);
   }
+  if (isM1AConfig(fp)) {
+    const timezone = fp.locale?.timezone;
+    const timezoneRegion = ref.timezoneToRegion?.[timezone];
+    const localeReference = timezoneRegion && ref.localeByRegion?.[timezoneRegion];
+    if (!localeReference) {
+      return bad('R-LANG', 'V1',
+        ['locale.timezone'],
+        `config timezone "${timezone}" is not bound to a dataset locale region`,
+        1);
+    }
+    const expected = localeReference.languageHead;
+    const acceptHead = String(accept).split(',')[0].trim();
+    const mismatches = [];
+    if (langs[0] !== expected) mismatches.push('navigator.languages');
+    if (acceptHead !== expected) mismatches.push('locale.acceptLanguage');
+    if (intlLocale !== expected) mismatches.push('locale.intlLocale');
+    if (mismatches.length > 0) {
+      return bad('R-LANG', 'V1',
+        [...mismatches, 'locale.timezone'],
+        `config locale fields do not match timezone region ${timezoneRegion} (expected ${expected})`,
+        1);
+    }
+  }
   const proxyCountry = fp.context?.proxyGeoCountry;
   const regionalHead = proxyCountry && ref.localeByRegion?.[proxyCountry]?.languageHead;
   if (regionalHead && a !== languageHead(regionalHead)) {
@@ -348,8 +570,27 @@ function rScreenReal(fp, ref) {
   const tuples = ref.screenTuplesByClass[cls];
   if (!tuples) return na('R-SCREEN-REAL', 'V1', 2);
   const dpr = s.devicePixelRatio ?? 1.0;
-  const match = tuples.some((t) => t.width === s.width && t.height === s.height && Math.abs(t.dpr - dpr) < 0.01);
+  const strictConfig = isM1AConfig(fp);
+  const match = tuples.some((t) =>
+    t.width === s.width
+      && t.height === s.height
+      && (strictConfig ? t.dpr === dpr : Math.abs(t.dpr - dpr) < 0.01));
   if (match) {
+    if (strictConfig
+        && (s.availWidth !== s.width
+          || s.availHeight !== s.height - 40
+          || s.colorDepth !== 24)) {
+      return bad('R-SCREEN-REAL', 'V1',
+        [
+          'screen.availWidth',
+          'screen.availHeight',
+          'screen.colorDepth',
+          'screen.width',
+          'screen.height',
+        ],
+        'config available dimensions and color depth do not exactly match the generated seed mode',
+        2);
+    }
     // avail must not exceed real, and must leave *some* chrome room on desktop/laptop.
     if (s.availWidth != null && s.availHeight != null) {
       if (s.availWidth > s.width || s.availHeight > s.height) {
@@ -372,6 +613,22 @@ function rHwPair(fp, ref) {
   const cores = fp.navigator?.hardwareConcurrency;
   const mem = fp.navigator?.deviceMemory;
   if (!cls || cores == null || mem == null) return na('R-HW-PAIR', 'V1', 1);
+  if (isM1AConfig(fp)) {
+    const pairs = ref.hardwarePairsByClass?.[cls];
+    const exactPair = Array.isArray(pairs)
+      && pairs.some((pair) =>
+        pair.hardwareConcurrency === cores && pair.deviceMemory === mem);
+    return exactPair
+      ? ok('R-HW-PAIR', 'V1', 1)
+      : bad('R-HW-PAIR', 'V1',
+        [
+          'persona.device.class',
+          'navigator.hardwareConcurrency',
+          'navigator.deviceMemory',
+        ],
+        `config hardware pair ${cores} cores/${mem}GiB is not an exact ${cls} dataset candidate`,
+        1);
+  }
   const t = ref.hardwareByClass[cls];
   if (!t) return na('R-HW-PAIR', 'V1', 1);
   const fields = [];
@@ -397,6 +654,40 @@ function rHwPair(fp, ref) {
 function rWebglWebgpu(fp, ref) {
   const gpu = fp.gpu;
   if (!gpu) return na('R-WEBGL-WEBGPU', 'V1', 3);
+
+  // A current generated config must be one of the dataset's complete, jointly
+  // sampled GPU profiles. Runtime observations remain family-checked below:
+  // the curated generator profiles are not an exhaustive list of real devices.
+  const os = fp.persona?.os?.name;
+  const deviceClass = fp.persona?.device?.class;
+  const profiles = ref.gpuProfilesByOs?.[os];
+  if (isM1AConfig(fp) && Array.isArray(profiles)) {
+    const exactProfile = profiles.find((profile) =>
+      gpu.webglVendor === profile.webglVendor
+        && gpu.webglRenderer === profile.webglRenderer
+        && exactValue(gpu.webglExtensions, profile.webglExtensions)
+        && exactValue(gpu.webgpuAdapter, profile.webgpuAdapter));
+    if (!exactProfile) {
+      return bad('R-WEBGL-WEBGPU', 'V1',
+        [
+          'gpu.webglVendor',
+          'gpu.webglRenderer',
+          'gpu.webglExtensions',
+          'gpu.webgpuAdapter',
+        ],
+        `GPU fields do not exactly match one ${os} dataset profile`,
+        3);
+    }
+    if (!Array.isArray(exactProfile.allowedDeviceClasses)
+        || !exactProfile.allowedDeviceClasses.includes(deviceClass)) {
+      return bad('R-WEBGL-WEBGPU', 'V1',
+        ['gpu', 'persona.device.class'],
+        `GPU profile "${exactProfile.webglRenderer}" is not allowed for device class "${deviceClass}"`,
+        3);
+    }
+    return ok('R-WEBGL-WEBGPU', 'V1', 3);
+  }
+
   const rendererFamily = gpuFamilyOf(gpu.webglRenderer, ref);
   const vendorFamily = gpuFamilyOf(gpu.webglVendor, ref);
   if (rendererFamily && vendorFamily) {
@@ -442,6 +733,39 @@ function rMediaOs(fp, ref) {
   const devices = Array.isArray(media.devices) ? media.devices : null;
   if (!voices && !devices) return na('R-MEDIA-OS', 'V1', 2);
   const profiles = ref.mediaProfilesByOs?.[os];
+  if (isM1AConfig(fp) && Array.isArray(profiles)) {
+    const expected = profiles.find((profile) => profile.id === media.profileId);
+    if (!expected) {
+      return bad('R-MEDIA-OS', 'V1',
+        ['media.profileId', 'persona.os.name'],
+        `config media profile "${media.profileId}" is not valid for ${os}`, 2);
+    }
+    const deviceShapeMatches = Array.isArray(devices)
+      && devices.length === expected.devices.length
+      && expected.devices.every((item, index) =>
+        devices[index]?.kind === item.kind
+          && devices[index]?.label === item.label
+          && typeof devices[index]?.deviceId === 'string'
+          && devices[index].deviceId.length > 0
+          && typeof devices[index]?.groupId === 'string'
+          && devices[index].groupId.length > 0);
+    const uniqueDeviceIds = Array.isArray(devices)
+      && new Set(devices.map((device) => device.deviceId)).size === devices.length;
+    if (!deviceShapeMatches
+        || !uniqueDeviceIds
+        || !exactValue(voices, expected.speechVoices)) {
+      return bad('R-MEDIA-OS', 'V1',
+        [
+          'media.devices',
+          'media.speechVoices',
+          'media.profileId',
+          'persona.os.name',
+        ],
+        `config media fields do not exactly match dataset profile "${media.profileId}" for ${os}`,
+        2);
+    }
+    return ok('R-MEDIA-OS', 'V1', 2);
+  }
   if (media.profileId && Array.isArray(profiles)) {
     const expected = profiles.find((profile) => profile.id === media.profileId);
     if (!expected) {
@@ -512,6 +836,52 @@ function rPerfPrecision(fp, ref) {
       `performance.now resolution ${observed}ms contradicts expected ${expected}ms`, 2);
 }
 
+/** R-NOISE-BOUNDS: current generated configs use the bounded M1A amplitude. */
+function rNoiseBounds(fp, ref) {
+  if (!isM1AConfig(fp)) {
+    return na('R-NOISE-BOUNDS', 'V1', 2);
+  }
+  const noise = fp.noise;
+  if (!noise) return na('R-NOISE-BOUNDS', 'V1', 2);
+  const mismatches = ['canvas', 'webgl', 'audio']
+    .filter((surface) => noise[surface]?.amplitude !== 'hw-natural')
+    .map((surface) => `noise.${surface}.amplitude`);
+  return mismatches.length === 0
+    ? ok('R-NOISE-BOUNDS', 'V1', 2)
+    : bad('R-NOISE-BOUNDS', 'V1', mismatches,
+      `config noise amplitudes exceed the M1A hw-natural policy: ${mismatches.join(', ')}`,
+      2);
+}
+
+/**
+ * R-PROVENANCE: bind every semantic input available to the independent Node
+ * verifier. The exact dataset digest comes from the Node reference loader.
+ */
+function rProvenance(fp, ref) {
+  if (!isM1AConfig(fp)) {
+    return na('R-PROVENANCE', 'V1', 3);
+  }
+  const provenance = fp.provenance;
+  if (!provenance || typeof ref?._sha256 !== 'string') {
+    return na('R-PROVENANCE', 'V1', 3);
+  }
+  const expected = {
+    datasetVersion: ref._version,
+    datasetSha256: ref._sha256,
+    engineVersion: fp.engine?.fullVersion,
+    rulesVersion: RULES_VERSION,
+    generatorVersion: CONFIG_GENERATOR_VERSION,
+  };
+  const mismatches = Object.entries(expected)
+    .filter(([field, value]) => provenance[field] !== value)
+    .map(([field]) => `provenance.${field}`);
+  return mismatches.length === 0
+    ? ok('R-PROVENANCE', 'V1', 3)
+    : bad('R-PROVENANCE', 'V1', mismatches,
+      `config provenance does not identify the exact dataset/engine/rules/generator inputs: ${mismatches.join(', ')}`,
+      3);
+}
+
 // ------------------------------------------------------------------ V2 rules
 
 /** R-VERSION-LIVE: engine major version must sit within the live population window. */
@@ -520,6 +890,16 @@ function rVersionLive(fp, ref) {
   const full = fp.engine?.fullVersion;
   const major = fp.engine?.majorVersion ?? (full ? Number(String(full).split('.')[0]) : null);
   if (!brand || major == null) return na('R-VERSION-LIVE', 'V2', 2);
+  if (isM1AConfig(fp) && !matchingEngineTarget(fp, ref)) {
+    const result = bad('R-VERSION-LIVE', 'V2',
+      ['engine.family', 'engine.brand', 'engine.majorVersion', 'engine.fullVersion'],
+      `${brand} ${full} is not an exact current dataset engine target`,
+      2);
+    // A stale runtime observation is probabilistic, but a generated config
+    // claiming a target absent from its bound dataset is a deterministic error.
+    result.severity = 'fatal';
+    return result;
+  }
   const win = ref.liveVersionWindow[brand];
   if (!win) return na('R-VERSION-LIVE', 'V2', 2);
   if (major >= win.min && major <= win.max) return ok('R-VERSION-LIVE', 'V2', 2);
@@ -527,6 +907,35 @@ function rVersionLive(fp, ref) {
     ['engine.majorVersion'],
     `${brand} ${major} is outside the live window [${win.min}, ${win.max}] — stale/rare versions are a V2 signal`,
     2);
+}
+
+/** R-RARITY-RANGE: informational score and verdict must remain self-consistent. */
+function rRarityRange(fp, ref) {
+  if (!isM1AConfig(fp)) {
+    return na('R-RARITY-RANGE', 'V2', 2);
+  }
+  const rarity = fp.rarity;
+  if (!rarity) return na('R-RARITY-RANGE', 'V2', 2);
+  const value = rarity.score;
+  if (typeof value !== 'number'
+      || !Number.isFinite(value)
+      || value < 0
+      || value > 1
+      || (value !== 0 && value < 0.000001)) {
+    return bad('R-RARITY-RANGE', 'V2',
+      ['rarity.score'],
+      `rarity score ${value} is outside the canonical [0,1] Profile Config range`,
+      2);
+  }
+  const expected = value >= 0.7 ? 'blends-in'
+    : value >= 0.5 ? 'borderline'
+      : 'too-rare';
+  return rarity.verdict === expected
+    ? ok('R-RARITY-RANGE', 'V2', 2)
+    : bad('R-RARITY-RANGE', 'V2',
+      ['rarity.score', 'rarity.verdict'],
+      `rarity verdict "${rarity.verdict}" contradicts score ${value} (expected "${expected}")`,
+      2);
 }
 
 // ------------------------------------------------------------------ V3 rules (trace tells)
@@ -555,9 +964,305 @@ function rDescriptorShape(fp) {
         2);
 }
 
-/** R-CROSS-CONTEXT: values must be identical across main/iframe/worker. */
+const CROSS_CONTEXT_SCHEMA_VERSION = '1.0.0';
+const REQUIRED_CROSS_CONTEXTS = Object.freeze([
+  'main',
+  'same-origin-iframe',
+  'cross-origin-iframe',
+  'dedicated-worker',
+  'shared-worker',
+  'service-worker',
+]);
+const CROSS_CONTEXT_STATUSES = new Set(['ok', 'unsupported', 'timeout', 'error']);
+const REQUIRED_CROSS_CONTEXT_VALUES = Object.freeze([
+  ['navigator.userAgent', (value) => typeof value === 'string' && value.length > 0],
+  ['navigator.platform', (value) => typeof value === 'string'],
+  ['navigator.languages', (value) =>
+    Array.isArray(value)
+      && value.length > 0
+      && value.every((entry) => typeof entry === 'string')],
+  ['navigator.hardwareConcurrency', (value) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0],
+  ['locale.timezone', (value) => typeof value === 'string' && value.length > 0],
+  ['locale.intlLocale', (value) => typeof value === 'string' && value.length > 0],
+]);
+const FRAME_CROSS_CONTEXTS = Object.freeze([
+  'main',
+  'same-origin-iframe',
+  'cross-origin-iframe',
+]);
+const CONDITIONAL_CROSS_CONTEXT_VALUES = Object.freeze([
+  ['navigator.vendor', FRAME_CROSS_CONTEXTS],
+  ['navigator.deviceMemory', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.brands', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.fullVersionList', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.platform', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.platformVersion', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.architecture', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.bitness', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.model', REQUIRED_CROSS_CONTEXTS],
+  ['clientHints.mobile', REQUIRED_CROSS_CONTEXTS],
+  ['gpu.webglVendor', REQUIRED_CROSS_CONTEXTS],
+  ['gpu.webglRenderer', REQUIRED_CROSS_CONTEXTS],
+]);
+
+function isStructuredCrossContext(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function crossContextValueAt(value, path) {
+  return path.split('.').reduce(
+    (current, part) => current == null ? undefined : current[part],
+    value,
+  );
+}
+
+function crossContextValuesAreComplete(values) {
+  return isStructuredCrossContext(values)
+    && REQUIRED_CROSS_CONTEXT_VALUES.every(
+      ([path, validate]) => validate(crossContextValueAt(values, path)),
+    );
+}
+
+function crossContextValueIsPresent(value) {
+  return value !== undefined && value !== null;
+}
+
+function sameCrossContextValue(left, right) {
+  return exactValue(left, right);
+}
+
+/**
+ * Artifact baselines must carry the structured report itself, not merely the
+ * legacy mismatch counter. Status/value validity remains the rule's job so a
+ * complete report can faithfully preserve a measured failure.
+ */
+export function hasStructuredSixContextEvidence(observation) {
+  const report = observation?.traces?.crossContext;
+  return isStructuredCrossContext(report)
+    && report.schemaVersion === CROSS_CONTEXT_SCHEMA_VERSION
+    && Array.isArray(report.requiredContexts)
+    && report.requiredContexts.length === REQUIRED_CROSS_CONTEXTS.length
+    && REQUIRED_CROSS_CONTEXTS.every(
+      (context, index) => report.requiredContexts[index] === context,
+    )
+    && isStructuredCrossContext(report.contexts)
+    && Object.keys(report.contexts).length === REQUIRED_CROSS_CONTEXTS.length
+    && REQUIRED_CROSS_CONTEXTS.every(
+      (context) => Object.hasOwn(report.contexts, context)
+        && isStructuredCrossContext(report.contexts[context]),
+    );
+}
+
+/**
+ * R-CROSS-CONTEXT: every required frame/worker context must be measured and
+ * expose the same values. Structured M1 evidence is fail-closed: incomplete
+ * coverage is itself a failure, not an unmeasured/pass result.
+ */
 function rCrossContext(fp) {
   const t = fp.traces;
+  const report = t?.crossContext;
+
+  if (isStructuredCrossContext(report)) {
+    const fields = [];
+    const reasons = [];
+
+    if (report.schemaVersion !== CROSS_CONTEXT_SCHEMA_VERSION) {
+      fields.push('traces.crossContext.schemaVersion');
+      reasons.push(
+        `schemaVersion must be "${CROSS_CONTEXT_SCHEMA_VERSION}"`,
+      );
+    }
+
+    const requiredContextsAreExact = Array.isArray(report.requiredContexts)
+      && report.requiredContexts.length === REQUIRED_CROSS_CONTEXTS.length
+      && REQUIRED_CROSS_CONTEXTS.every(
+        (context, index) => report.requiredContexts[index] === context,
+      );
+    if (!requiredContextsAreExact) {
+      fields.push('traces.crossContext.requiredContexts');
+      reasons.push(
+        `requiredContexts must be exactly [${REQUIRED_CROSS_CONTEXTS.join(', ')}]`,
+      );
+    }
+
+    const contexts = isStructuredCrossContext(report.contexts)
+      ? report.contexts
+      : null;
+    const contextNamesAreExact = contexts
+      && Object.keys(contexts).length === REQUIRED_CROSS_CONTEXTS.length
+      && REQUIRED_CROSS_CONTEXTS.every((context) =>
+        Object.hasOwn(contexts, context));
+    if (!contextNamesAreExact) {
+      fields.push('traces.crossContext.contexts');
+      reasons.push(
+        `contexts must contain exactly [${REQUIRED_CROSS_CONTEXTS.join(', ')}]`,
+      );
+    }
+    const unmeasured = [];
+    for (const context of REQUIRED_CROSS_CONTEXTS) {
+      const observation = contexts && Object.hasOwn(contexts, context)
+        ? contexts[context]
+        : undefined;
+      if (!isStructuredCrossContext(observation)) {
+        fields.push(`traces.crossContext.contexts.${context}`);
+        unmeasured.push(`${context} (missing)`);
+        continue;
+      }
+      if (!CROSS_CONTEXT_STATUSES.has(observation.status)) {
+        fields.push(`traces.crossContext.contexts.${context}.status`);
+        unmeasured.push(`${context} (invalid status "${String(observation.status)}")`);
+        continue;
+      }
+      if (observation.status !== 'ok') {
+        fields.push(`traces.crossContext.contexts.${context}.status`);
+        unmeasured.push(`${context} (${observation.status})`);
+      } else if (!crossContextValuesAreComplete(observation.values)) {
+        fields.push(`traces.crossContext.contexts.${context}.values`);
+        unmeasured.push(`${context} (malformed values)`);
+      }
+    }
+    if (unmeasured.length > 0) {
+      reasons.push(`unmeasured required contexts: ${unmeasured.join(', ')}`);
+    }
+
+    if (report.complete !== true) {
+      fields.push('traces.crossContext.complete');
+      reasons.push('complete must be true');
+    }
+
+    if (!Array.isArray(report.mismatches)) {
+      fields.push('traces.crossContext.mismatches');
+      reasons.push('mismatches must be an array');
+    } else {
+      const mismatchReasons = [];
+      report.mismatches.forEach((mismatch, index) => {
+        const base = `traces.crossContext.mismatches.${index}`;
+        if (!isStructuredCrossContext(mismatch)) {
+          fields.push(base);
+          mismatchReasons.push(`entry ${index} is malformed`);
+          return;
+        }
+        const context = mismatch.context;
+        const field = mismatch.field;
+        if (!REQUIRED_CROSS_CONTEXTS.includes(context)) {
+          fields.push(`${base}.context`);
+          mismatchReasons.push(
+            `entry ${index} has invalid context "${String(context)}"`,
+          );
+          return;
+        }
+        if (typeof field !== 'string' || field.length === 0) {
+          fields.push(`${base}.field`);
+          mismatchReasons.push(`entry ${index} in ${context} has no field`);
+          return;
+        }
+        fields.push(`${base}.context`, `${base}.field`);
+        mismatchReasons.push(`${context}/${field}`);
+      });
+      if (mismatchReasons.length > 0) {
+        reasons.unshift(`mismatches: ${mismatchReasons.join(', ')}`);
+      }
+    }
+
+    const mainValues = contexts?.main?.values;
+    if (crossContextValuesAreComplete(mainValues)) {
+      const undeclared = [];
+      for (const [path] of REQUIRED_CROSS_CONTEXT_VALUES) {
+        if (!sameCrossContextValue(
+          crossContextValueAt(fp, path),
+          crossContextValueAt(mainValues, path),
+        )) {
+          fields.push(
+            path,
+            `traces.crossContext.contexts.main.values.${path}`,
+          );
+          undeclared.push(`main/${path}`);
+        }
+      }
+      for (const context of REQUIRED_CROSS_CONTEXTS.slice(1)) {
+        const values = contexts?.[context]?.values;
+        if (!crossContextValuesAreComplete(values)) continue;
+        for (const [path] of REQUIRED_CROSS_CONTEXT_VALUES) {
+          if (!sameCrossContextValue(
+            crossContextValueAt(mainValues, path),
+            crossContextValueAt(values, path),
+          )) {
+            fields.push(
+              `traces.crossContext.contexts.main.values.${path}`,
+              `traces.crossContext.contexts.${context}.values.${path}`,
+            );
+            undeclared.push(`${context}/${path}`);
+          }
+        }
+      }
+      for (const [path, applicableContexts] of CONDITIONAL_CROSS_CONTEXT_VALUES) {
+        const expected = crossContextValueAt(fp, path);
+        const mainValue = crossContextValueAt(mainValues, path);
+        const expectedIsPresent = crossContextValueIsPresent(expected);
+        const mainIsPresent = crossContextValueIsPresent(mainValue);
+        if (expectedIsPresent !== mainIsPresent
+            || (expectedIsPresent
+              && !sameCrossContextValue(expected, mainValue))) {
+          fields.push(
+            path,
+            `traces.crossContext.contexts.main.values.${path}`,
+          );
+          undeclared.push(
+            `main/${path}${mainIsPresent ? '' : ' (missing)'}`,
+          );
+        }
+        for (const context of applicableContexts.slice(1)) {
+          const values = contexts?.[context]?.values;
+          if (!crossContextValuesAreComplete(values)) continue;
+          const actual = crossContextValueAt(values, path);
+          const actualIsPresent = crossContextValueIsPresent(actual);
+          if (expectedIsPresent && !actualIsPresent) {
+            fields.push(
+              `traces.crossContext.contexts.main.values.${path}`,
+              `traces.crossContext.contexts.${context}.values.${path}`,
+            );
+            undeclared.push(`${context}/${path} (missing)`);
+          } else if (!expectedIsPresent && actualIsPresent) {
+            fields.push(
+              `traces.crossContext.contexts.main.values.${path}`,
+              `traces.crossContext.contexts.${context}.values.${path}`,
+            );
+            undeclared.push(`${context}/${path} (unexpected presence)`);
+          } else if (expectedIsPresent
+              && !sameCrossContextValue(expected, actual)) {
+            fields.push(
+              `traces.crossContext.contexts.main.values.${path}`,
+              `traces.crossContext.contexts.${context}.values.${path}`,
+            );
+            undeclared.push(`${context}/${path}`);
+          }
+        }
+      }
+      if (undeclared.length > 0) {
+        reasons.unshift(
+          `observed values disagree independently of the declared mismatch list: ${undeclared.join(', ')}`,
+        );
+      }
+    }
+
+    return reasons.length === 0
+      ? ok('R-CROSS-CONTEXT', 'V3', 3)
+      : bad(
+          'R-CROSS-CONTEXT',
+          'V3',
+          unique(fields),
+          `cross-context evidence failed closed — ${reasons.join('; ')}`,
+          3,
+        );
+  }
+
+  // Legacy fixture compatibility. A null/missing legacy value remains
+  // unmeasured; a numeric zero/nonzero retains the original pass/fail meaning.
   if (!t || typeof t.crossContextMismatches !== 'number') return na('R-CROSS-CONTEXT', 'V3', 3);
   return t.crossContextMismatches === 0
     ? ok('R-CROSS-CONTEXT', 'V3', 3)
@@ -573,6 +1278,12 @@ function rCrossContext(fp) {
 function rTlsParity(fp) {
   const n = fp.network;
   if (!n || n.ja3Matches == null) return na('R-TLS-PARITY', 'V4', 3);
+  if (typeof n.ja3Matches !== 'boolean') {
+    return bad('R-TLS-PARITY', 'V4',
+      ['network.ja3Matches'],
+      `network.ja3Matches must be a boolean observation, got ${typeof n.ja3Matches}`,
+      3);
+  }
   return n.ja3Matches
     ? ok('R-TLS-PARITY', 'V4', 3)
     : bad('R-TLS-PARITY', 'V4',
@@ -585,6 +1296,12 @@ function rTlsParity(fp) {
 function rH2Parity(fp) {
   const n = fp.network;
   if (!n || n.h2Matches == null) return na('R-H2-PARITY', 'V4', 2);
+  if (typeof n.h2Matches !== 'boolean') {
+    return bad('R-H2-PARITY', 'V4',
+      ['network.h2Matches'],
+      `network.h2Matches must be a boolean observation, got ${typeof n.h2Matches}`,
+      2);
+  }
   return n.h2Matches
     ? ok('R-H2-PARITY', 'V4', 2)
     : bad('R-H2-PARITY', 'V4',
@@ -658,9 +1375,9 @@ function rNoHeadless(fp) {
 
 /** The ordered catalog. Adding a rule here is the only step needed to extend coverage. */
 export const RULES = [
-  rPlatformGpu, rPlatformOs, rUaCh, rVendorFamily, rFontOs, rTzGeo, rLang, rScreenReal, rHwPair,
-  rWebglWebgpu, rMediaOs, rPerfPrecision,                                                   // V1
-  rVersionLive,                                                                                   // V2
+  rConfigSchema, rPlatformGpu, rPlatformOs, rPersonaTarget, rUaCh, rVendorFamily, rFontOs, rTzGeo, rLang,
+  rScreenReal, rHwPair, rWebglWebgpu, rMediaOs, rPerfPrecision, rNoiseBounds, rProvenance,       // V1
+  rVersionLive, rRarityRange,                                                                    // V2
   rNativeToString, rDescriptorShape, rCrossContext,                                               // V3
   rTlsParity, rH2Parity, rNoDnsLeak, rNoWebrtcLeak,                                               // V4
   rNoWebdriver, rNoCdpArtifacts, rNoRuntimeLeak, rIsTrusted, rNoHeadless,                          // V5
@@ -675,11 +1392,14 @@ export const RULES = [
 // so future soft tells (a mild behavioral hint, a weak rarity signal) can be
 // added without gating the verdict.
 export const SEVERITY = {
-  'R-PLATFORM-GPU': 'fatal', 'R-PLATFORM-OS': 'fatal', 'R-UA-CH': 'fatal',
+  'R-CONFIG-SCHEMA': 'fatal',
+  'R-PLATFORM-GPU': 'fatal', 'R-PLATFORM-OS': 'fatal', 'R-PERSONA-TARGET': 'fatal',
+  'R-UA-CH': 'fatal',
   'R-VENDOR-FAMILY': 'fatal', 'R-FONT-OS': 'fatal', 'R-TZ-GEO': 'fatal',
   'R-LANG': 'fatal', 'R-SCREEN-REAL': 'fatal', 'R-HW-PAIR': 'fatal',
   'R-WEBGL-WEBGPU': 'fatal', 'R-MEDIA-OS': 'fatal', 'R-PERF-PRECISION': 'fatal',
-  'R-VERSION-LIVE': 'soft',
+  'R-NOISE-BOUNDS': 'fatal', 'R-PROVENANCE': 'fatal',
+  'R-VERSION-LIVE': 'soft', 'R-RARITY-RANGE': 'fatal',
   'R-NATIVE-TOSTRING': 'fatal', 'R-DESCRIPTOR-SHAPE': 'fatal', 'R-CROSS-CONTEXT': 'fatal',
   'R-TLS-PARITY': 'fatal', 'R-H2-PARITY': 'fatal', 'R-NO-DNS-LEAK': 'fatal', 'R-NO-WEBRTC-LEAK': 'fatal',
   'R-NO-WEBDRIVER': 'fatal', 'R-NO-CDP-ARTIFACTS': 'fatal', 'R-NO-RUNTIME-LEAK': 'fatal',
@@ -690,7 +1410,7 @@ export const SEVERITY = {
 export function runRules(fp, ref) {
   return RULES.map((fn) => {
     const r = fn(fp, ref);
-    r.severity = SEVERITY[r.id] || 'fatal';
+    r.severity ||= SEVERITY[r.id] || 'fatal';
     return r;
   });
 }

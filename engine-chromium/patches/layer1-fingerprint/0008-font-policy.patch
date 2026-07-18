@@ -3,11 +3,11 @@
 # Threat-vectors: V1 (font-os)
 # Upstream-risk: MED. platform/fonts/font_cache*.cc, FontManager, text-metrics paths; plus bundled-font packaging + licensing (see ../../../docs/10-third-party-licensing.md).
 # Tests: v1-coherence/font-os
-# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+# Target-milestone: M1
+# Status: BACKLOG
 #
-# This header is a valid, reviewable specification. The unified diff below is
-# empty in M0 (no Chromium checkout to diff against) and will be produced by
-# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
-# during M1 implementation.
+# This file is a valid, reviewable M1 backlog specification. Its git-format
+# patch payload will be produced against the pinned baseline (see
+# ../../CHROMIUM_BASELINE) during M1 implementation.
 #
-# (no diff hunks yet — M0 placeholder)
+# (no diff hunks yet — M1 backlog placeholder)

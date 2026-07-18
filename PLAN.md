@@ -26,13 +26,17 @@ Winning is not a UI problem. In priority order, it is:
 
 1. **Consistency.** The #1 way these tools get caught is *incoherence* — a macOS
    claim with Windows fonts, an Apple GPU under `Win32`, a timezone that fights the
-   proxy's IP. Fix coherence and you beat most detection.
+   proxy's IP. Fix coherence and you beat most detection. Read it at the *fleet*
+   level too: the population of profiles you emit must blend into the real world,
+   not cluster into a recognizable "made by this tool" cohort
+   ([`docs/adr/0007`](docs/adr/0007-fleet-de-correlation.md)).
 2. **Native production.** Fingerprint values must come from the C++ engine, not
    JavaScript overrides, or they leave detectable traces (wrong `toString`,
    descriptors, Worker/iframe mismatches).
-3. **Cross-layer alignment.** The JS fingerprint, the TLS handshake (JA3/JA4), the
-   HTTP/2 settings, and behavior must all tell the *same* story. Perfect JS with a
-   Go TLS fingerprint still dies.
+3. **Cross-layer alignment.** The JS fingerprint, the TLS handshake (JA3/JA4,
+   ECH shape, and whether the connection looks tunneled), the HTTP/2 settings, and
+   behavior must all tell the *same* story. Perfect JS with a Go TLS fingerprint
+   still dies.
 4. **The treadmill.** Chromium ships every few weeks; a fingerprint that lags the
    real population is anomalous by definition. Staying current is survival.
 
@@ -73,8 +77,13 @@ handshake *is* the correct one — so the sidecar just tunnels. Detail:
 - **Four-layer consistency** with tunnel-not-MITM fidelity — even most premium
   tools don't do all of it.
 - **Real-distribution sampling + rarity scoring** — actively avoid being
-  *over-unique*; show a "blend-in" score. Attacks the second-biggest detection
+  *over-unique* (and *over-clean*); show a "blend-in" score. Attacks the second-biggest detection
   vector that nearly everyone ignores.
+- **Fleet de-correlation, measured** — the whole population of profiles must blend
+  into the real world, not just each profile individually. An adversarial red-team
+  classifier that tries to detect "made by Proteus" is a tracked release gate.
+  This is the vector that historically kills popular stealth tools, and almost
+  nobody measures it ([`docs/adr/0007`](docs/adr/0007-fleet-de-correlation.md)).
 - **Public regression dashboard** — verifiable, non-degrading effectiveness.
 - **Reproducible builds + provenance** — trust the binary, don't just hope.
 - **Local-first + zero-knowledge sync** — your data, your keys.
@@ -162,10 +171,14 @@ the license and adds no use restriction.
 
 **Pre-alpha / non-UI core work in progress.** Two tracks must be kept separate:
 
-- The local M0 ruler and tooling scaffold are runnable. The hard M0 exit has not
-  passed: the Chromium patch files have no real diff hunks, and there is no
-  signed, independently reproducible Win/macOS/Linux engine bundle or
-  builder-attested live verification evidence. See [`M0.md`](M0.md).
+- The M0 ruler, hard contracts, and GitHub-hosted reference workflow are
+  runnable/testable, but the production build path is not complete: the current
+  runner class lacks Chromium-scale macOS storage, and a trusted
+  external-ephemeral controller/finalizer has not been implemented. The hard
+  exit therefore cannot yet produce its six A/B builds. The sole active layer0
+  patch defaults Google-backed Network Time querying off; this is not complete
+  de-Googling. The 16 M1/M3 specifications are a separate backlog and do not
+  gate or hash into M0. See [`M0.md`](M0.md).
 - The bounded **M1A signed-config core** is complete: deterministic Rust
   generation, strict structural and semantic validation, Ed25519 signing and
   fail-closed verification, fixed vectors, and independent Node conformance

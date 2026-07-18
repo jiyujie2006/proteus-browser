@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proteus.example/schemas/m0-evidence-v2.schema.json",
+  "title": "Proteus hard-M0 build evidence v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "assuranceLevel",
+    "repository",
+    "source",
+    "signer",
+    "platforms"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "2.0.0"
+    },
+    "assuranceLevel": {
+      "const": "full-bundle-builder-attested/v2"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nameWithOwner",
+        "repositoryId",
+        "ownerId",
+        "visibility"
+      ],
+      "properties": {
+        "nameWithOwner": {
+          "const": "jiyujie2006/proteus-browser"
+        },
+        "repositoryId": {
+          "const": "1304085575"
+        },
+        "ownerId": {
+          "const": "49909156"
+        },
+        "visibility": {
+          "const": "public"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "ref"
+      ],
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/gitCommit"
+        },
+        "ref": {
+          "const": "refs/heads/main"
+        }
+      }
+    },
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflow",
+        "digest"
+      ],
+      "properties": {
+        "workflow": {
+          "const": ".github/workflows/m0-builder.yml"
+        },
+        "digest": {
+          "$ref": "#/$defs/gitCommit"
+        }
+      }
+    },
+    "platforms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "windows-x64",
+        "macos-universal",
+        "linux-x64"
+      ],
+      "properties": {
+        "windows-x64": {
+          "$ref": "#/$defs/buildPair"
+        },
+        "macos-universal": {
+          "$ref": "#/$defs/buildPair"
+        },
+        "linux-x64": {
+          "$ref": "#/$defs/buildPair"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "githubId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,19}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!\\.{1,2}(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*:)(?!.*//)(?!.*[. ](?:/|$))[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "bundleManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "treeSha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "treeSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "githubHostedRunner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "github-hosted"
+        }
+      }
+    },
+    "externalRunner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "receipt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "external-ephemeral"
+        },
+        "receipt": {
+          "$ref": "#/$defs/file"
+        }
+      }
+    },
+    "attestations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provenance",
+        "sbom",
+        "build"
+      ],
+      "properties": {
+        "provenance": {
+          "$ref": "#/$defs/file"
+        },
+        "sbom": {
+          "$ref": "#/$defs/file"
+        },
+        "build": {
+          "$ref": "#/$defs/file"
+        }
+      }
+    },
+    "buildRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "runAttempt",
+        "checkRunId",
+        "artifactId",
+        "artifactName",
+        "artifactDigest",
+        "artifactSize",
+        "artifactInnerSha256",
+        "artifactInnerSize",
+        "runner",
+        "bundleRoot",
+        "bundleManifest",
+        "dependencyLock",
+        "toolchainLock",
+        "effectiveGnArgs",
+        "sbom",
+        "licenseBundle",
+        "liveReport",
+        "attestations"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/githubId"
+        },
+        "runAttempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checkRunId": {
+          "$ref": "#/$defs/githubId"
+        },
+        "artifactId": {
+          "$ref": "#/$defs/githubId"
+        },
+        "artifactName": {
+          "type": "string",
+          "pattern": "^m0-payload-(?:windows-x64|macos-universal|linux-x64)-[AB]-attempt-[1-9][0-9]{0,8}$"
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 45097156608
+        },
+        "artifactInnerSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifactInnerSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 42949672960
+        },
+        "runner": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/githubHostedRunner"
+            },
+            {
+              "$ref": "#/$defs/externalRunner"
+            }
+          ]
+        },
+        "bundleRoot": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "bundleManifest": {
+          "$ref": "#/$defs/bundleManifest"
+        },
+        "dependencyLock": {
+          "$ref": "#/$defs/file"
+        },
+        "toolchainLock": {
+          "$ref": "#/$defs/file"
+        },
+        "effectiveGnArgs": {
+          "$ref": "#/$defs/file"
+        },
+        "sbom": {
+          "$ref": "#/$defs/file"
+        },
+        "licenseBundle": {
+          "$ref": "#/$defs/file"
+        },
+        "liveReport": {
+          "$ref": "#/$defs/file"
+        },
+        "attestations": {
+          "$ref": "#/$defs/attestations"
+        }
+      }
+    },
+    "buildPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "A",
+        "B"
+      ],
+      "properties": {
+        "A": {
+          "$ref": "#/$defs/buildRecord"
+        },
+        "B": {
+          "$ref": "#/$defs/buildRecord"
+        }
+      }
+    }
+  }
+}

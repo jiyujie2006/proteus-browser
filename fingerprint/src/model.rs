@@ -457,14 +457,18 @@ pub struct EngineTarget {
     pub full_version: String,
     pub weight: u32,
     pub platform_versions: BTreeMap<String, String>,
+    pub client_hint_brands: Vec<BrandVersion>,
+    pub client_hint_full_version_list: Vec<BrandVersion>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GpuProfile {
     pub family: String,
+    pub allowed_device_classes: Vec<DeviceClass>,
     pub webgl_vendor: String,
     pub webgl_renderer: String,
+    pub webgl_extensions: Vec<String>,
     pub webgpu_adapter: WebGpuAdapter,
     pub weight: u32,
 }

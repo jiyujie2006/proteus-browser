@@ -1,0 +1,206 @@
+{
+  "clientHints": {
+    "architecture": "x86",
+    "bitness": "64",
+    "brands": [
+      {
+        "brand": "Not;A=Brand",
+        "version": "8"
+      },
+      {
+        "brand": "Chromium",
+        "version": "150"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "150"
+      }
+    ],
+    "fullVersionList": [
+      {
+        "brand": "Not;A=Brand",
+        "version": "8.0.0.0"
+      },
+      {
+        "brand": "Chromium",
+        "version": "150.0.7871.124"
+      },
+      {
+        "brand": "Google Chrome",
+        "version": "150.0.7871.124"
+      }
+    ],
+    "mobile": false,
+    "model": "",
+    "platform": "Windows",
+    "platformVersion": "15.0.0"
+  },
+  "engine": {
+    "brand": "Chrome",
+    "family": "chromium",
+    "fullVersion": "150.0.7871.124",
+    "majorVersion": 150
+  },
+  "fonts": {
+    "policy": "os-superset-restricted",
+    "set": [
+      "Arial",
+      "Calibri",
+      "Cambria",
+      "Cambria Math",
+      "Consolas",
+      "Courier New",
+      "Georgia",
+      "Segoe UI",
+      "Segoe UI Emoji",
+      "Segoe UI Symbol",
+      "Tahoma",
+      "Times New Roman",
+      "Trebuchet MS",
+      "Verdana"
+    ]
+  },
+  "gpu": {
+    "webglExtensions": [
+      "ANGLE_instanced_arrays",
+      "EXT_blend_minmax",
+      "EXT_color_buffer_float",
+      "EXT_float_blend",
+      "EXT_texture_filter_anisotropic",
+      "OES_element_index_uint",
+      "OES_standard_derivatives",
+      "OES_texture_float",
+      "WEBGL_compressed_texture_s3tc",
+      "WEBGL_debug_renderer_info",
+      "WEBGL_lose_context"
+    ],
+    "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "webglVendor": "Google Inc. (NVIDIA)",
+    "webgpuAdapter": {
+      "architecture": "ampere",
+      "description": "NVIDIA GeForce RTX 3060",
+      "device": "0x2503",
+      "family": "NVIDIA",
+      "vendor": "nvidia"
+    }
+  },
+  "locale": {
+    "acceptLanguage": "en-US,en;q=0.9",
+    "intlLocale": "en-US",
+    "timezone": "America/Denver"
+  },
+  "media": {
+    "devices": [
+      {
+        "deviceId": "N9AyGPsiXT2Kxs2B0sNCU0Ng",
+        "groupId": "wPDrvCEWx12zwf_shG9SpIqI",
+        "kind": "audioinput",
+        "label": "Microphone (Realtek(R) Audio)"
+      },
+      {
+        "deviceId": "sE2Iwx45DgRNTA78PzsBNu82",
+        "groupId": "wPDrvCEWx12zwf_shG9SpIqI",
+        "kind": "audiooutput",
+        "label": "Speakers (Realtek(R) Audio)"
+      },
+      {
+        "deviceId": "PZmYNGKYtR7-toh2IsSK-kGn",
+        "groupId": "EPiYalPOQKQN3f5Yi5BjzD-t",
+        "kind": "videoinput",
+        "label": "Integrated Camera"
+      }
+    ],
+    "profileId": "windows-11-common",
+    "speechVoices": [
+      {
+        "default": true,
+        "lang": "en-US",
+        "localService": true,
+        "name": "Microsoft David - English (United States)"
+      },
+      {
+        "default": false,
+        "lang": "en-US",
+        "localService": true,
+        "name": "Microsoft Zira - English (United States)"
+      }
+    ]
+  },
+  "navigator": {
+    "deviceMemory": 8.0,
+    "hardwareConcurrency": 8,
+    "languages": [
+      "en-US",
+      "en"
+    ],
+    "oscpu": null,
+    "platform": "Win32",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "vendor": "Google Inc."
+  },
+  "network": {
+    "quicPolicy": "match-brand",
+    "webrtcPolicy": "proxy-only"
+  },
+  "noise": {
+    "audio": {
+      "amplitude": "hw-natural",
+      "mode": "perturb"
+    },
+    "canvas": {
+      "amplitude": "hw-natural",
+      "mode": "perturb"
+    },
+    "clientRects": {
+      "mode": "subpixel"
+    },
+    "webgl": {
+      "amplitude": "hw-natural",
+      "mode": "perturb"
+    }
+  },
+  "performance": {
+    "timerPrecisionMicros": 100
+  },
+  "persona": {
+    "device": {
+      "class": "desktop",
+      "model": null
+    },
+    "os": {
+      "arch": "x86_64",
+      "name": "Windows",
+      "version": "11"
+    }
+  },
+  "profileId": "28cb7f36-e350-4310-ba2c-cceb21accf46",
+  "provenance": {
+    "datasetSha256": "022919ecb9b990f17570bb0793c74871cfca393b0177e5cd5e098094e3d95787",
+    "datasetVersion": "0.3.0",
+    "engineVersion": "150.0.7871.124",
+    "generatorVersion": "0.2.0",
+    "rulesVersion": "1.1.0"
+  },
+  "rarity": {
+    "reasons": [],
+    "score": 0.962,
+    "verdict": "blends-in"
+  },
+  "schemaVersion": "1.0.0",
+  "screen": {
+    "availHeight": 1040,
+    "availWidth": 1920,
+    "colorDepth": 24,
+    "devicePixelRatio": 1.0,
+    "height": 1080,
+    "width": 1920
+  },
+  "seed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "signature": {
+    "algorithm": "Ed25519",
+    "canonicalization": "RFC8785",
+    "domain": "proteus-profile-config/v1",
+    "keyId": "proteus-m1a-test-key",
+    "value": "mCMU//o6bcyJtAjrJkYdcYgwGTj410mXlFeWiWmc3eXmPLRrBNAcShKVJr70eUyHGnNBA24H4Q2q5aGde3/qCg=="
+  }
+}

@@ -1,5 +1,12 @@
 import { createHash, createPublicKey, verify as verifySignature } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,7 +20,7 @@ const GOLDEN_PATH = join(
   REPO,
   'fingerprint',
   'conformance',
-  'v1',
+  'v2',
   'golden',
   'windows-chrome-us.signed.json',
 );
@@ -21,10 +28,11 @@ const VECTOR_PATH = join(
   REPO,
   'fingerprint',
   'conformance',
-  'v1',
+  'v2',
   'signing-vector.json',
 );
 const DATASET_PATH = join(REPO, 'verify-lab', 'data', 'reference.json');
+const CLI_PATH = join(REPO, 'verify-lab', 'bin', 'verify-lab.mjs');
 
 const SPKI_ED25519_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
@@ -81,6 +89,162 @@ export function runM1AConformanceTests(check, ref) {
   ]);
   check(!verifySignature(null, aliasedKeyInput, publicKey, signatureBytes),
     'Node rejects an unsigned keyId alias substitution');
+
+  const checkSemanticMutation = (label, ruleId, mutate) => {
+    const changed = structuredClone(signed);
+    mutate(changed);
+    const assessment = score(normalize(changed, {}), ref);
+    const outcome = assessment.results.find((entry) => entry.id === ruleId);
+    check(outcome?.status === 'fail'
+        && assessment.gated
+        && assessment.verdict !== 'blends-in'
+        && assessment.inconsistencies.some((entry) => entry.id === ruleId),
+      `current-target config mutation is rejected: ${label} (${ruleId})`);
+  };
+
+  const checkMissingContractField = (field, ruleId) => {
+    const changed = structuredClone(signed);
+    delete changed[field];
+    const assessment = score(normalize(changed, {}), ref);
+    const outcome = assessment.results.find((entry) => entry.id === ruleId);
+    check(outcome?.status === 'na'
+        && assessment.verdict !== 'blends-in'
+        && assessment.coverage.missingRequiredRules.includes(ruleId),
+      `current config cannot downgrade by deleting ${field} (${ruleId})`);
+  };
+
+  const checkCombinedContractDowngrade = (label, mutate) => {
+    const changed = structuredClone(signed);
+    mutate(changed);
+    const assessment = score(normalize(changed, {}), ref);
+    check(assessment.scope === 'config'
+        && assessment.verdict !== 'blends-in'
+        && (!assessment.coverage.complete || assessment.gated),
+      `current config cannot downgrade through ${label}`);
+    return changed;
+  };
+
+  // Independent mirrors of Rust validate() for the current engine target.
+  // Runtime observations intentionally keep their broader tolerances.
+  checkSemanticMutation('persona OS version', 'R-PERSONA-TARGET',
+    (value) => { value.persona.os.version = '10'; });
+  checkSemanticMutation('non-null desktop model', 'R-PERSONA-TARGET',
+    (value) => { value.persona.device.model = 'Synthetic Desktop'; });
+  checkSemanticMutation('unreduced full-version UA', 'R-UA-CH',
+    (value) => {
+      value.navigator.userAgent = value.navigator.userAgent.replace(
+        'Chrome/150.0.0.0',
+        `Chrome/${value.engine.fullVersion}`,
+      );
+    });
+  checkSemanticMutation('approximately matching DPR', 'R-SCREEN-REAL',
+    (value) => { value.screen.devicePixelRatio += 0.0005; });
+  checkSemanticMutation('available screen height', 'R-SCREEN-REAL',
+    (value) => { value.screen.availHeight -= 1; });
+  checkSemanticMutation('screen color depth', 'R-SCREEN-REAL',
+    (value) => { value.screen.colorDepth = 30; });
+  checkSemanticMutation('non-candidate hardware pair', 'R-HW-PAIR',
+    (value) => {
+      value.navigator.hardwareConcurrency = 5;
+      value.navigator.deviceMemory = 2;
+    });
+  checkSemanticMutation('timezone-derived locale', 'R-LANG',
+    (value) => { value.locale.timezone = 'Europe/Berlin'; });
+  checkSemanticMutation('speech-voice shape', 'R-MEDIA-OS',
+    (value) => { value.media.speechVoices[0].localService = false; });
+  checkSemanticMutation('duplicate media device ID', 'R-MEDIA-OS',
+    (value) => {
+      value.media.devices[1].deviceId = value.media.devices[0].deviceId;
+    });
+  checkSemanticMutation('performance policy', 'R-PERF-PRECISION',
+    (value) => { value.performance.timerPrecisionMicros = 101; });
+  checkSemanticMutation('unbounded noise amplitude', 'R-NOISE-BOUNDS',
+    (value) => { value.noise.canvas.amplitude = 'unbounded'; });
+  checkSemanticMutation('rarity verdict', 'R-RARITY-RANGE',
+    (value) => { value.rarity.verdict = 'too-rare'; });
+  checkSemanticMutation('dataset provenance', 'R-PROVENANCE',
+    (value) => { value.provenance.datasetVersion = '0.3.0-tampered'; });
+  checkSemanticMutation('engine patch outside exact target', 'R-VERSION-LIVE',
+    (value) => {
+      const changedVersion = '150.0.7871.125';
+      value.engine.fullVersion = changedVersion;
+      value.provenance.engineVersion = changedVersion;
+      for (const entry of value.clientHints.fullVersionList) {
+        if (entry.brand === 'Chromium' || entry.brand === 'Google Chrome') {
+          entry.version = changedVersion;
+        }
+      }
+    });
+  checkSemanticMutation('engine major outside exact target', 'R-VERSION-LIVE',
+    (value) => {
+      const changedMajor = 149;
+      const changedVersion = '149.0.7777.1';
+      value.engine.majorVersion = changedMajor;
+      value.engine.fullVersion = changedVersion;
+      value.provenance.engineVersion = changedVersion;
+      value.navigator.userAgent = value.navigator.userAgent.replace(
+        'Chrome/150.0.0.0',
+        `Chrome/${changedMajor}.0.0.0`,
+      );
+      for (const entry of value.clientHints.brands) {
+        if (entry.brand === 'Chromium' || entry.brand === 'Google Chrome') {
+          entry.version = String(changedMajor);
+        }
+      }
+      for (const entry of value.clientHints.fullVersionList) {
+        if (entry.brand === 'Chromium' || entry.brand === 'Google Chrome') {
+          entry.version = changedVersion;
+        }
+      }
+    });
+  checkMissingContractField('noise', 'R-NOISE-BOUNDS');
+  checkMissingContractField('media', 'R-MEDIA-OS');
+  checkMissingContractField('performance', 'R-PERF-PRECISION');
+  checkMissingContractField('provenance', 'R-PROVENANCE');
+  const strictContractFields = [
+    'provenance',
+    'noise',
+    'rarity',
+    'media',
+    'performance',
+  ];
+  checkCombinedContractDowngrade('combined strict-field deletion', (value) => {
+    for (const field of strictContractFields) delete value[field];
+  });
+  checkCombinedContractDowngrade('combined strict-field nulling', (value) => {
+    for (const field of strictContractFields) value[field] = null;
+  });
+  const cliDowngrade = checkCombinedContractDowngrade(
+    'strict fields plus seed/schema deletion',
+    (value) => {
+      for (const field of strictContractFields) delete value[field];
+      delete value.seed;
+      delete value.schemaVersion;
+    },
+  );
+  const cliTemp = mkdtempSync(join(tmpdir(), 'proteus-config-downgrade-'));
+  try {
+    const cliInput = join(cliTemp, 'mutated-config.json');
+    writeFileSync(cliInput, JSON.stringify(cliDowngrade));
+    const cli = spawnSync(
+      process.execPath,
+      [CLI_PATH, 'score', cliInput, '--json'],
+      { encoding: 'utf8' },
+    );
+    let cliAssessment;
+    try {
+      cliAssessment = JSON.parse(cli.stdout);
+    } catch {
+      cliAssessment = null;
+    }
+    check(cli.status === 1
+        && cliAssessment?.scope === 'config'
+        && cliAssessment?.verdict !== 'blends-in'
+        && (!cliAssessment?.coverage?.complete || cliAssessment?.gated),
+      'score CLI fails closed on combined discriminator deletion');
+  } finally {
+    rmSync(cliTemp, { recursive: true, force: true });
+  }
 
   const result = score(normalize(signed, {}), ref);
   check(result.scope === 'config' && result.assessment.complete,

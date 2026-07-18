@@ -17,6 +17,9 @@ proteus-fingerprint.json
 /engine-chromium/artifacts/*
 !/engine-chromium/artifacts/README.md
 !/engine-chromium/artifacts/m0-build-evidence.json
+!/engine-chromium/artifacts/m0-build-evidence-v2.json
+!/engine-chromium/artifacts/m0-evidence-v2.schema.json
+/.m0-build/
 /engine-firefox/obj-*/
 depot_tools/
 *.o

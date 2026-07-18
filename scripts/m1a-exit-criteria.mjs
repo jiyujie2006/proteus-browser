@@ -120,7 +120,7 @@ check('CLI fail-closed reload verifies signature and semantics', () => {
   const result = command('cargo', [
     'run', '--quiet', '--locked', '--manifest-path', 'fingerprint/Cargo.toml', '--',
     'verify',
-    '--config', 'fingerprint/conformance/v1/golden/windows-chrome-us.signed.json',
+    '--config', 'fingerprint/conformance/v2/golden/windows-chrome-us.signed.json',
     '--dataset', 'verify-lab/data/reference.json',
     '--trust-store', 'fingerprint/fixtures/test-trust-store.json',
   ], { capture: true });
@@ -160,7 +160,7 @@ function goldenPath() {
     REPO,
     'fingerprint',
     'conformance',
-    'v1',
+    'v2',
     'golden',
     'windows-chrome-us.signed.json',
   );

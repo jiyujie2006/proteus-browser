@@ -3,6 +3,12 @@
 **Status:** Design · **Serves principles:** III, IV · **Threat vectors:** V5
 (automation/CDP traces), supports V6 (behavior)
 
+> **Milestone boundary:** M1 owns the basic native trace-removal specifications
+> (`navigator.webdriver` and automation switch/infobar behavior; layer2 patches
+> 0001–0002). M3 owns the authenticated stealth endpoint and
+> `Runtime.enable`-leak-free path (layer2 patch 0003). The no-code RPA runtime is
+> M4. All three patches are currently backlog specifications, not M0 inputs.
+
 Many users will automate Proteus (scraping-for-QA, testing, RPA). Automation is
 also one of the most detectable things a browser can do. This TDD covers both
 sides: removing automation *traces*, and providing a *stealth automation* surface

@@ -23,6 +23,16 @@ const PROBE_FILES = Object.freeze([
     path: 'probe-page/collect.js',
     requestPath: '/probe-page/collect.js',
   }),
+  Object.freeze({
+    contentType: 'text/html; charset=utf-8',
+    path: 'probe-page/context-frame.html',
+    requestPath: '/probe-page/context-frame.html',
+  }),
+  Object.freeze({
+    contentType: 'text/javascript; charset=utf-8',
+    path: 'probe-page/context-worker.js',
+    requestPath: '/probe-page/context-worker.js',
+  }),
 ]);
 
 function loadProbeBundle(root) {
@@ -69,6 +79,15 @@ function loadProbeBundle(root) {
   };
 }
 
+function requestHeader(request, name) {
+  const value = request.headers?.[name];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return value.join(', ');
+  }
+  return null;
+}
+
 /**
  * Describe the exact probe bytes accepted by an M0 machine report.
  */
@@ -78,8 +97,17 @@ export function buildControlledProbeBinding(root = LAB_ROOT) {
 
 export function createControlledProbeHandler(root = LAB_ROOT) {
   const { binding, resources } = loadProbeBundle(root);
+  const entryRequests = [];
   return {
     binding,
+    entryRequestHeaders() {
+      if (entryRequests.length !== 1) {
+        throw new TypeError(
+          `controlled probe expected exactly one entry request, observed ${entryRequests.length}`,
+        );
+      }
+      return { ...entryRequests[0] };
+    },
     handle(request, response) {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
         response.writeHead(405, { allow: 'GET, HEAD' });
@@ -91,6 +119,13 @@ export function createControlledProbeHandler(root = LAB_ROOT) {
         response.writeHead(404);
         response.end('not found');
         return;
+      }
+      if (request.method === 'GET'
+          && request.url === `/${binding.entryPath}`) {
+        entryRequests.push({
+          acceptLanguage: requestHeader(request, 'accept-language'),
+          userAgent: requestHeader(request, 'user-agent'),
+        });
       }
       response.writeHead(200, {
         'cache-control': 'no-store',
@@ -104,7 +139,7 @@ export function createControlledProbeHandler(root = LAB_ROOT) {
 }
 
 /**
- * Serve a frozen, two-file probe bundle on an OS-assigned IPv4 loopback port.
+ * Serve a frozen, four-file probe bundle on an OS-assigned IPv4 loopback port.
  *
  * The resources are read before `listen()`, then served from memory. This
  * prevents a concurrent file change from making the reported digest differ
@@ -117,7 +152,8 @@ export async function startControlledProbeServer({
   if (host !== DEFAULT_STATIC_HOST) {
     throw new TypeError('controlled probe server must bind to 127.0.0.1');
   }
-  const { binding, handle } = createControlledProbeHandler(root);
+  const probe = createControlledProbeHandler(root);
+  const { binding, handle } = probe;
   const server = createServer(handle);
 
   try {
@@ -148,6 +184,7 @@ export async function startControlledProbeServer({
   let closed = false;
   return {
     binding,
+    entryRequestHeaders: probe.entryRequestHeaders,
     url: `http://${DEFAULT_STATIC_HOST}:${address.port}/${binding.entryPath}`,
     async close() {
       if (closed) return;

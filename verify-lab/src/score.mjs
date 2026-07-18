@@ -20,7 +20,7 @@
 // gradient but do not by themselves gate the verdict. `na` results never help or
 // hurt and are excluded from their vector's score.
 
-import { runRules } from './rules.mjs';
+import { isM1AConfig, runRules } from './rules.mjs';
 
 // Vector weights for the aggregate gradient. V1 dominates by Principle I.
 export const VECTOR_WEIGHTS = Object.freeze({
@@ -115,7 +115,7 @@ export function score(fp, ref) {
   }
   let aggregate = den === 0 ? 0 : num / den;
 
-  const requiredRuleIds = requiredRulesFor(fp, scope);
+  const requiredRuleIds = requiredRulesFor(fp, scope, ref);
   const resultById = new Map(results.map((result) => [result.id, result]));
   const missingRequiredRules = requiredRuleIds.filter((id) => {
     const result = resultById.get(id);
@@ -171,12 +171,25 @@ export function score(fp, ref) {
   };
 }
 
-function requiredRulesFor(fp, scope) {
+function requiredRulesFor(fp, scope, ref) {
   const ids = [...CONFIG_REQUIRED_RULES];
+  const strictM1AConfig = scope === 'config' && isM1AConfig(fp);
+  if (strictM1AConfig) {
+    ids.push(
+      'R-CONFIG-SCHEMA',
+      'R-PERSONA-TARGET',
+      'R-WEBGL-WEBGPU',
+      'R-MEDIA-OS',
+      'R-PERF-PRECISION',
+      'R-NOISE-BOUNDS',
+      'R-RARITY-RANGE',
+      'R-PROVENANCE',
+    );
+  }
   if (fp.context?.proxyGeoCountry) ids.push('R-TZ-GEO');
-  if (fp.gpu?.webgpuAdapter != null) ids.push('R-WEBGL-WEBGPU');
-  if (fp.media != null) ids.push('R-MEDIA-OS');
-  if (fp.performance != null) ids.push('R-PERF-PRECISION');
+  if (!strictM1AConfig && fp.gpu?.webgpuAdapter != null) ids.push('R-WEBGL-WEBGPU');
+  if (!strictM1AConfig && fp.media != null) ids.push('R-MEDIA-OS');
+  if (!strictM1AConfig && fp.performance != null) ids.push('R-PERF-PRECISION');
   if (scope === 'runtime') ids.push(...RUNTIME_REQUIRED_RULES);
   return ids;
 }

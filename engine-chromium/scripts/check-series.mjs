@@ -1,82 +1,78 @@
 #!/usr/bin/env node
-// check-series.mjs — validate the patch series structure and headers.
-// Runs with no Chromium checkout. This is a real CI gate (docs/tdd/05 §3, §8):
-// every patch listed in `series` must exist and carry the required rationale
-// headers, and every patch file on disk must be listed in `series` (no orphans).
+// Validate the complete patch catalog without a Chromium checkout.
+//
+// `patches/series` is the only production build input. M1/M3 specifications
+// live in milestone-labelled backlogs so future work cannot accidentally become
+// an M0 exit dependency.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { readChromiumBaseline } from './baseline.mjs';
+import {
+  auditActivePatchSeries,
+  auditPatchCatalog,
+  patchHasPayload,
+} from './patch-series.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, '..');
 const PATCHES = join(ROOT, 'patches');
 
-const REQUIRED_HEADERS = ['# Rationale:', '# Surface:', '# Upstream-risk:', '# Tests:'];
-
-function readSeries() {
-  const raw = readFileSync(join(PATCHES, 'series'), 'utf8');
-  return raw.split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith('#'));
+const args = process.argv.slice(2);
+const activeOnly = args.length === 1 && args[0] === '--active';
+if (args.length > (activeOnly ? 1 : 0)) {
+  console.error('usage: check-series.mjs [--active]');
+  process.exit(64);
 }
 
-function allPatchFiles() {
-  const out = [];
-  for (const layer of readdirSync(PATCHES, { withFileTypes: true })) {
-    if (!layer.isDirectory()) continue;
-    for (const f of readdirSync(join(PATCHES, layer.name))) {
-      if (f.endsWith('.patch')) out.push(`${layer.name}/${f}`);
-    }
+let baseline;
+try {
+  baseline = readChromiumBaseline(join(ROOT, 'CHROMIUM_BASELINE'));
+} catch (error) {
+  console.error(`\n  ❌ invalid Chromium baseline: ${error.message}\n`);
+  process.exit(1);
+}
+
+const audit = activeOnly
+  ? auditActivePatchSeries(PATCHES, baseline.PATCH_PROFILE)
+  : auditPatchCatalog(PATCHES, baseline.PATCH_PROFILE);
+const activePayloads = audit.active.filter((entry) =>
+  patchHasPayload(join(PATCHES, entry)));
+
+console.log(`\n  Proteus ${activeOnly ? 'active M0 patch-series' : 'patch-catalog'} check`);
+console.log('  ' + '─'.repeat(62));
+
+for (const error of audit.errors) console.log(`  ❌ ${error}`);
+if (audit.errors.length === 0) {
+  if (activeOnly) {
+    console.log(
+      `  ✅ ${audit.active.length} active M0 layer0 patch satisfies the ${baseline.PATCH_PROFILE} metadata contract`,
+    );
+    console.log('  ✅ future backlog files were not read and cannot affect this M0 gate');
+  } else {
+    console.log(
+      `  ✅ ${audit.active.length} active M0 patch and ${audit.backlog.length} future specifications are disjoint and complete`,
+    );
+    console.log('  ✅ every patch has milestone/status/rationale/surface/risk/test metadata');
+    console.log(`  ✅ active profile is ${baseline.PATCH_PROFILE}; M1/M3 backlogs are not build inputs`);
   }
-  return out.sort();
 }
 
-let errors = 0;
-const fail = (m) => { console.log(`  ❌ ${m}`); errors++; };
-const ok = (m) => console.log(`  ✅ ${m}`);
-
-console.log('\n  Proteus patch-series check');
-console.log('  ' + '─'.repeat(58));
-
-const series = readSeries();
-const onDisk = allPatchFiles();
-
-// 1. Every series entry exists on disk.
-for (const entry of series) {
-  if (!existsSync(join(PATCHES, entry))) fail(`series lists "${entry}" but it does not exist`);
+console.log('  ' + '─'.repeat(62));
+if (activeOnly) {
+  console.log(`  active: ${activePayloads.length}/${audit.active.length} real payloads`);
+} else {
+  console.log(
+    `  active: ${activePayloads.length}/${audit.active.length} real payloads; backlog: ${audit.backlog.length}; on disk: ${audit.onDisk.length}`,
+  );
 }
-
-// 2. Every patch on disk is listed in series (no orphans).
-const seriesSet = new Set(series);
-for (const f of onDisk) {
-  if (!seriesSet.has(f)) fail(`patch "${f}" exists but is not in series`);
+if (activePayloads.length !== audit.active.length) {
+  console.log(
+    '  ℹ️  active placeholder remains: metadata is valid, but production apply and hard M0 stay closed',
+  );
 }
+console.log(
+  `  ${audit.errors.length === 0 ? `✅ ${activeOnly ? 'active M0 series' : 'patch catalog'} valid` : `❌ ${audit.errors.length} problem(s)`}\n`,
+);
 
-// 3. Series is layered in order (layer0 < layer1 < layer2).
-const layerOf = (p) => Number((p.match(/^layer(\d)/) || [])[1] ?? 9);
-let lastLayer = -1, ordered = true;
-for (const entry of series) {
-  const l = layerOf(entry);
-  if (l < lastLayer) { ordered = false; fail(`series out of layer order at "${entry}"`); }
-  lastLayer = Math.max(lastLayer, l);
-}
-if (ordered) ok('series is in layer order (0 → 1 → 2)');
-
-// 4. Every patch carries the required headers.
-let headerOk = 0;
-for (const entry of series) {
-  const p = join(PATCHES, entry);
-  if (!existsSync(p)) continue;
-  const text = readFileSync(p, 'utf8');
-  const missing = REQUIRED_HEADERS.filter((h) => !text.includes(h));
-  if (missing.length) fail(`"${entry}" missing header(s): ${missing.join(', ')}`);
-  else headerOk++;
-}
-if (headerOk === series.length) ok(`all ${headerOk} patches carry Rationale/Surface/Upstream-risk/Tests headers`);
-
-// 5. Count summary.
-console.log('  ' + '─'.repeat(58));
-console.log(`  ${series.length} patches in series, ${onDisk.length} on disk`);
-console.log(`  ${errors === 0 ? '✅ patch series valid' : '❌ ' + errors + ' problem(s)'}\n`);
-process.exit(errors === 0 ? 0 : 1);
+process.exit(audit.errors.length === 0 ? 0 : 1);

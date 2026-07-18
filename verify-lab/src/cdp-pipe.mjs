@@ -34,16 +34,34 @@ export class CdpPipeClient {
   }
 
   send(method, params = {}, sessionId = null) {
-    if (this.failure) return Promise.reject(this.failure);
+    const request = this.sendWithWriteAck(method, params, sessionId);
+    void request.written.catch(() => {});
+    return request.response;
+  }
+
+  sendWithWriteAck(method, params = {}, sessionId = null) {
+    if (this.failure) {
+      const failure = Promise.reject(this.failure);
+      return { response: failure, written: failure };
+    }
     if (typeof method !== 'string' || method.length === 0) {
-      return Promise.reject(new TypeError('CDP method must be a non-empty string'));
+      const failure = Promise.reject(
+        new TypeError('CDP method must be a non-empty string'),
+      );
+      return { response: failure, written: failure };
     }
     const id = this.nextId;
     this.nextId += 1;
     const message = { id, method, params };
     if (sessionId !== null) message.sessionId = sessionId;
 
-    return new Promise((resolve, reject) => {
+    let resolveWritten;
+    let rejectWritten;
+    const written = new Promise((resolve, reject) => {
+      resolveWritten = resolve;
+      rejectWritten = reject;
+    });
+    const response = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`CDP timeout: ${method}`));
@@ -58,7 +76,11 @@ export class CdpPipeClient {
         `${JSON.stringify(message)}\0`,
         'utf8',
         (error) => {
-          if (!error) return;
+          if (!error) {
+            resolveWritten();
+            return;
+          }
+          rejectWritten(error);
           const pending = this.pending.get(id);
           if (!pending) return;
           clearTimeout(pending.timer);
@@ -67,6 +89,7 @@ export class CdpPipeClient {
         },
       );
     });
+    return { response, written };
   }
 
   waitForEvent(method, {

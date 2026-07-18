@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // sbom.mjs — emit a CycloneDX-shaped repository component-manifest stub.
-// This inventory names only first-party components present in this source tree.
-// It is NOT a production SBOM or redistribution-compliance decision. A release
-// must derive its full inventory from sources, build graphs, and packaged bytes.
+// This inventory names first-party components plus the narrow third-party
+// source context present in this repository. It is NOT a production SBOM or
+// redistribution-compliance decision. A release must derive its full inventory
+// from sources, build graphs, and packaged bytes.
 
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -35,7 +36,7 @@ const components = [
     licenses: ['Apache-2.0'],
     group: 'proteus',
     scope: 'required',
-    comment: 'First-party patch/build/evidence scaffold; no Chromium source or binary.',
+    comment: 'First-party patch/build/evidence scaffold; no Chromium checkout or binary.',
   },
   {
     type: 'application',
@@ -44,6 +45,19 @@ const components = [
     group: 'proteus',
     scope: 'required',
     comment: 'Milestone gates, schemas, and repository automation.',
+  },
+  {
+    type: 'library',
+    name: 'chromium-network-time-source-context',
+    version: '150.0.7871.124',
+    licenses: ['BSD-3-Clause'],
+    group: 'chromium',
+    scope: 'required',
+    hashes: [{
+      alg: 'SHA-256',
+      content: '704ad013d6af61138961ebe95b621c41be93738251ac6e8f5d997fe48881095d',
+    }],
+    comment: 'Pinned source context in the active M0 Network Time patch; not a Chromium checkout or binary.',
   },
 ];
 
@@ -66,8 +80,9 @@ function uuidV5(name) {
 const violations = [];
 for (const c of components) {
   for (const lic of c.licenses || []) {
-    if (lic !== 'Apache-2.0') {
-      violations.push(`${c.name}: current first-party component unexpectedly declares ${lic}`);
+    const expected = c.group === 'chromium' ? 'BSD-3-Clause' : 'Apache-2.0';
+    if (lic !== expected) {
+      violations.push(`${c.name}: expected ${expected}, found ${lic}`);
     }
   }
 }
@@ -88,7 +103,7 @@ const sbom = {
       { name: 'proteus:build-derived', value: 'false' },
       {
         name: 'proteus:scope-note',
-        value: 'Current first-party repository components only; excludes resolved packages, planned engines, and release artifacts.',
+        value: 'Current repository components only, including the pinned Chromium diff context; excludes resolved packages, engine checkouts/binaries, and release artifacts.',
       },
       {
         name: 'proteus:compliance-note',
@@ -101,6 +116,7 @@ const sbom = {
     type: c.type, group: c.group, name: c.name, version: c.version,
     scope: c.scope,
     licenses: (c.licenses || []).map((id) => ({ license: { id } })),
+    ...(c.hashes ? { hashes: c.hashes } : {}),
     ...(c.comment ? { description: c.comment } : {}),
   })),
 };
@@ -110,7 +126,7 @@ if (asJson) {
   process.stdout.write(JSON.stringify(sbom, null, 2) + '\n');
 } else {
   console.log('\n  Proteus repository component manifest stub (CycloneDX 1.5 shape)');
-  console.log('  ⚠ NOT a production SBOM: current first-party source components only');
+  console.log('  ⚠ NOT a production SBOM: repository declarations plus pinned Chromium diff context only');
   console.log('  ' + '─'.repeat(58));
   for (const c of sbom.components) {
     const lic = c.licenses.map((l) => l.license.id).join(', ');
@@ -121,7 +137,7 @@ if (asJson) {
     console.log('  ❌ DECLARED-MANIFEST LICENSE CHECK FAILED:');
     for (const v of violations) console.log(`     - ${v}`);
   } else {
-    console.log('  ✅ current first-party component declarations are internally consistent');
+    console.log('  ✅ repository component declarations are internally consistent');
   }
   console.log('  Run with --json for the machine-readable manifest stub.\n');
 }

@@ -7,15 +7,26 @@
 // ordinary file with --artifact <path>; missing or invalid inputs fail closed.
 //
 // The provenance answers "can I trust this binary?" with a checkable document,
-// not a promise: it records the exact source tag, patch-series hash, toolchain,
+// not a promise: it records the exact source tag, active patch-series hash, toolchain,
 // build args, and artifact digest, so an independent rebuilder can reproduce and
 // compare.
 
-import { createReadStream, existsSync, lstatSync, readFileSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  writeSync,
+} from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { readChromiumBaseline } from './baseline.mjs';
+import { activePatchSeriesSha256 } from './patch-series.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -27,7 +38,7 @@ const TARGET_ARCHITECTURES = {
 };
 
 function usage() {
-  return `usage: ${basename(process.argv[1])} (--artifact <file> --chromium-commit <hex> --platform <id> --invocation-id <id> | --demo)`;
+  return `usage: ${basename(process.argv[1])} (--artifact <file> --effective-gn-args <file> --chromium-commit <hex> --platform <id> --invocation-id <id> | --demo)`;
 }
 
 function fail(message) {
@@ -41,6 +52,7 @@ function parseArgs(args) {
   let chromiumCommit = null;
   let platform = null;
   let invocationId = null;
+  let effectiveGnArgs = null;
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -67,6 +79,18 @@ function parseArgs(args) {
       i += 1;
       continue;
     }
+    if (arg === '--effective-gn-args') {
+      if (effectiveGnArgs !== null) {
+        fail('--effective-gn-args may only be supplied once');
+      }
+      const value = args[i + 1];
+      if (!value || value.startsWith('--')) {
+        fail('--effective-gn-args requires a file path');
+      }
+      effectiveGnArgs = value;
+      i += 1;
+      continue;
+    }
     if (arg === '--platform' || arg === '--invocation-id') {
       const current = arg === '--platform' ? platform : invocationId;
       if (current !== null) fail(`${arg} may only be supplied once`);
@@ -82,6 +106,7 @@ function parseArgs(args) {
 
   if (demo && (
     artifactPath !== null
+    || effectiveGnArgs !== null
     || chromiumCommit !== null
     || platform !== null
     || invocationId !== null
@@ -94,6 +119,9 @@ function parseArgs(args) {
   if (!demo && chromiumCommit === null) {
     fail('production provenance requires --chromium-commit <full-hex-digest>');
   }
+  if (!demo && effectiveGnArgs === null) {
+    fail('production provenance requires --effective-gn-args <file>');
+  }
   if (!demo && !['windows-x64', 'macos-universal', 'linux-x64'].includes(platform)) {
     fail('production provenance requires a supported --platform id');
   }
@@ -101,44 +129,61 @@ function parseArgs(args) {
     fail('production provenance requires a safe --invocation-id');
   }
   if (chromiumCommit !== null
-      && !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(chromiumCommit)) {
-    fail('--chromium-commit must be a lowercase 40- or 64-hex digest');
+      && !/^[0-9a-f]{40}$/.test(chromiumCommit)) {
+    fail('--chromium-commit must be a lowercase 40-hex digest');
   }
 
-  return { demo, artifactPath, chromiumCommit, platform, invocationId };
+  return {
+    demo,
+    artifactPath,
+    chromiumCommit,
+    effectiveGnArgs,
+    platform,
+    invocationId,
+  };
 }
 
-function readBaseline() {
-  const raw = readFileSync(join(ROOT, 'CHROMIUM_BASELINE'), 'utf8');
-  const out = {};
-  for (const line of raw.split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m) out[m[1]] = m[2];
+function hashStableOrdinaryFile(path, label, maxBytes) {
+  const before = lstatSync(path, { bigint: true });
+  if (!before.isFile() || before.isSymbolicLink()) {
+    throw new TypeError(`${label} is not an ordinary non-symlink file`);
   }
-  return out;
-}
-
-// Hash the patch series deterministically: concat sorted patch file contents.
-function patchSeriesHash() {
-  const series = readFileSync(join(ROOT, 'patches', 'series'), 'utf8')
-    .split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-  const h = createHash('sha256');
-  for (const rel of series) {
-    const p = join(ROOT, 'patches', rel);
-    h.update(rel + '\0');
-    if (existsSync(p)) h.update(readFileSync(p));
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  const hash = createHash('sha256');
+  try {
+    const opened = fstatSync(fd, { bigint: true });
+    if (!sameStableFile(before, opened)) {
+      throw new TypeError(`${label} changed while it was opened`);
+    }
+    if (opened.size > BigInt(maxBytes)) {
+      throw new TypeError(`${label} exceeds ${maxBytes} bytes`);
+    }
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    for (;;) {
+      const count = readSync(fd, buffer, 0, buffer.length, null);
+      if (count === 0) break;
+      hash.update(buffer.subarray(0, count));
+    }
+    const after = fstatSync(fd, { bigint: true });
+    const pathAfter = lstatSync(path, { bigint: true });
+    if (!sameStableFile(opened, after) || !sameStableFile(after, pathAfter)) {
+      throw new TypeError(`${label} changed or was rebound while hashing`);
+    }
+    return { sha256: hash.digest('hex'), size: opened.size };
+  } finally {
+    closeSync(fd);
   }
-  return 'sha256:' + h.digest('hex');
 }
 
-function sha256File(path) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
-    const input = createReadStream(path);
-    input.on('data', (chunk) => hash.update(chunk));
-    input.on('error', reject);
-    input.on('end', () => resolve(hash.digest('hex')));
-  });
+function sameStableFile(left, right) {
+  return left.isFile()
+    && right.isFile()
+    && left.dev === right.dev
+    && left.ino === right.ino
+    && left.mode === right.mode
+    && left.size === right.size
+    && left.mtimeNs === right.mtimeNs
+    && left.ctimeNs === right.ctimeNs;
 }
 
 function toolchainInfo() {
@@ -148,14 +193,40 @@ function toolchainInfo() {
   return info;
 }
 
-const baseline = readBaseline();
+const baseline = readChromiumBaseline(join(ROOT, 'CHROMIUM_BASELINE'));
+const gnArgsTemplateSnapshot = hashStableOrdinaryFile(
+  join(ROOT, 'build', 'args.gn'),
+  'GN args template',
+  1024 * 1024,
+);
 const {
   demo,
   artifactPath,
   chromiumCommit,
+  effectiveGnArgs,
   platform,
   invocationId,
 } = parseArgs(process.argv.slice(2));
+if (!demo && chromiumCommit !== baseline.CHROMIUM_COMMIT) {
+  fail(
+    `--chromium-commit must equal pinned baseline commit ${baseline.CHROMIUM_COMMIT}`,
+  );
+}
+let effectiveGnArgsSnapshot = gnArgsTemplateSnapshot;
+if (!demo) {
+  if (!existsSync(effectiveGnArgs)) {
+    fail(`effective GN args do not exist: ${effectiveGnArgs}`);
+  }
+  try {
+    effectiveGnArgsSnapshot = hashStableOrdinaryFile(
+      effectiveGnArgs,
+      'effective GN args',
+      1024 * 1024,
+    );
+  } catch (error) {
+    fail(`cannot hash effective GN args ${effectiveGnArgs}: ${error.message}`);
+  }
+}
 
 let artifact;
 if (artifactPath !== null) {
@@ -163,28 +234,22 @@ if (artifactPath !== null) {
     fail(`artifact does not exist: ${artifactPath}`);
   }
 
-  let artifactStat;
+  let artifactSnapshot;
   try {
-    artifactStat = lstatSync(artifactPath);
+    artifactSnapshot = hashStableOrdinaryFile(
+      artifactPath,
+      'artifact',
+      16 * 1024 * 1024 * 1024,
+    );
   } catch (error) {
-    fail(`cannot inspect artifact ${artifactPath}: ${error.message}`);
-  }
-  if (!artifactStat.isFile()) {
-    fail(`artifact is not an ordinary file: ${artifactPath}`);
-  }
-
-  let digest;
-  try {
-    digest = await sha256File(artifactPath);
-  } catch (error) {
-    fail(`cannot read artifact ${artifactPath}: ${error.message}`);
+    fail(`cannot hash artifact ${artifactPath}: ${error.message}`);
   }
   artifact = {
     name: basename(artifactPath),
-    digest: { sha256: digest },
+    digest: { sha256: artifactSnapshot.sha256 },
     annotations: {
       'https://proteus.example/artifact-kind': 'file',
-      'https://proteus.example/size-bytes': String(artifactStat.size),
+      'https://proteus.example/size-bytes': String(artifactSnapshot.size),
     },
     real: true,
   };
@@ -221,13 +286,18 @@ const provenance = {
         chromiumTag: baseline.CHROMIUM_STABLE,
         channel: baseline.CHANNEL,
         milestone: baseline.MILESTONE,
-        gnArgs: 'engine-chromium/build/args.gn',
-        gnArgsSha256: `sha256:${createHash('sha256')
-          .update(readFileSync(join(ROOT, 'build', 'args.gn')))
-          .digest('hex')}`,
+        gnArgsTemplate: 'engine-chromium/build/args.gn',
+        gnArgsTemplateSha256: `sha256:${gnArgsTemplateSnapshot.sha256}`,
+        effectiveGnArgs: artifact.real
+          ? basename(effectiveGnArgs)
+          : 'demo:engine-chromium/build/args.gn',
+        effectiveGnArgsSha256: `sha256:${effectiveGnArgsSnapshot.sha256}`,
       },
       internalParameters: {
-        patchSeriesHash: patchSeriesHash(),
+        patchProfile: baseline.PATCH_PROFILE,
+        patchSeriesHash:
+          `sha256:${activePatchSeriesSha256(ROOT, baseline.PATCH_PROFILE)}`,
+        depotToolsCommit: baseline.DEPOT_TOOLS_COMMIT,
         toolchain: toolchainInfo(),
         targetArchitectures: artifact.real
           ? TARGET_ARCHITECTURES[platform]
@@ -236,9 +306,11 @@ const provenance = {
       resolvedDependencies: [
         {
           uri: 'https://chromium.googlesource.com/chromium/src',
-          digest: artifact.real
-            ? { gitCommit: chromiumCommit }
-            : { gitTag: baseline.CHROMIUM_STABLE },
+          digest: { gitCommit: artifact.real ? chromiumCommit : baseline.CHROMIUM_COMMIT },
+        },
+        {
+          uri: 'https://chromium.googlesource.com/chromium/tools/depot_tools',
+          digest: { gitCommit: baseline.DEPOT_TOOLS_COMMIT },
         },
         { uri: 'https://github.com/ungoogled-software/ungoogled-chromium', comment: 'layer0 patch methodology' },
       ],

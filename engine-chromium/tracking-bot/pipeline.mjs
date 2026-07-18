@@ -14,11 +14,12 @@
 // (on the farm) swaps the stubbed steps for fetch-chromium.sh / build.sh /
 // verify-lab, gated at each step.
 
-import { readFileSync, writeSync } from 'node:fs';
+import { writeSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readChromiumBaseline } from '../scripts/baseline.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -26,13 +27,6 @@ const REPO = join(ROOT, '..');
 
 const DRY = process.argv.includes('--dry-run');
 const defaultWrite = (line = '') => writeSync(process.stdout.fd, line + '\n');
-
-function baseline() {
-  const raw = readFileSync(join(ROOT, 'CHROMIUM_BASELINE'), 'utf8');
-  const out = {};
-  for (const line of raw.split('\n')) { const m = line.match(/^([A-Z_]+)=(.*)$/); if (m) out[m[1]] = m[2]; }
-  return out;
-}
 
 // In a real run this queries the Chromium release API. In --dry-run we simulate
 // "no newer stable" (the common case) unless PROTEUS_SIMULATE_NEW is set.
@@ -68,7 +62,7 @@ export function runTrackingPipeline({
     out();
   };
 
-  const base = baseline();
+  const base = readChromiumBaseline(join(ROOT, 'CHROMIUM_BASELINE'));
   out('\n  Proteus version-tracking bot' + (dry ? '  (DRY RUN — no network/build)' : ''));
   out('  ' + '─'.repeat(58));
 
@@ -85,14 +79,28 @@ export function runTrackingPipeline({
   log('WATCH', `new stable ${latest} detected → starting rebase pipeline`);
 
   // 2. SYNC
-  if (dry) log('SYNC', `would run scripts/fetch-chromium.sh to ${latest} (skipped in dry-run)`);
-  else execFileSync('bash', ['scripts/fetch-chromium.sh'], { cwd: ROOT, stdio: 'inherit' });
+  if (dry) {
+    log(
+      'SYNC',
+      `would require a reviewed candidate baseline for ${latest} and run scripts/fetch-chromium.sh --baseline <candidate> (skipped in dry-run)`,
+    );
+  } else {
+    stopIssue('reviewed candidate baseline required', [
+      `detected ${latest}, but the immutable baseline still pins ${base.CHROMIUM_STABLE}.`,
+      'Resolve the official tag to an exact commit, pin depot_tools, and submit the candidate baseline for review before any fetch/build.',
+      'The tracker refuses to fetch a new tag while silently using the old baseline.',
+    ]);
+    return finish(2);
+  }
 
   // 3. REBASE — validate series first (this part is real even in dry-run).
-  log('REBASE', 'validating patch series structure/headers…');
+  log('REBASE', 'validating the active patch series independently of future backlogs…');
   try {
-    execFileSync('node', ['scripts/check-series.mjs'], { cwd: ROOT, stdio: 'ignore' });
-    log('REBASE', 'series valid.');
+    execFileSync('node', ['scripts/check-series.mjs', '--active'], {
+      cwd: ROOT,
+      stdio: 'ignore',
+    });
+    log('REBASE', 'active series valid.');
   } catch (e) {
     const detail = [e.code, e.status != null ? `status=${e.status}` : null, e.signal]
       .filter(Boolean)
@@ -144,6 +152,7 @@ export function runTrackingPipeline({
     const provenanceInputs = {
       artifact: process.env.PROTEUS_ARTIFACT || '',
       chromiumCommit: process.env.PROTEUS_CHROMIUM_COMMIT || '',
+      effectiveGnArgs: process.env.PROTEUS_EFFECTIVE_GN_ARGS || '',
       platform: process.env.PROTEUS_PLATFORM || '',
       invocationId: process.env.PROTEUS_INVOCATION_ID || '',
     };
@@ -155,6 +164,8 @@ export function runTrackingPipeline({
         provenanceInputs.artifact,
         '--chromium-commit',
         provenanceInputs.chromiumCommit,
+        '--effective-gn-args',
+        provenanceInputs.effectiveGnArgs,
         '--platform',
         provenanceInputs.platform,
         '--invocation-id',

@@ -14,9 +14,10 @@ persona request + 32-byte seed + versioned seed dataset
   → independent fail-closed reload + verify
 ```
 
-It intentionally stops at the honest boundary: the Chromium patches are still
-placeholders until they are implemented and built against a real Chromium
-checkout. Passing these tests proves config generation plus standalone
+It intentionally stops at the honest boundary: the Chromium-native M1 patch
+specifications are still backlog placeholders until they are implemented and
+built against a real Chromium checkout. Passing these tests proves config
+generation plus standalone
 reload/verification contract conformance; it does not prove Chromium ingest,
 native browser surfaces, or cross-context propagation.
 
@@ -42,6 +43,17 @@ the data without regenerating and resigning the config fails closed. Its weights
 are explicitly heuristic; real population distributions and calibrated rarity
 arrive in M4.
 
+The current contract is generator `0.2.0`, rules `1.1.0`, and reference dataset
+`0.3.0`. Chrome 150 uses the reduced `Chrome/150.0.0.0` UA while its exact,
+ordered high-entropy Client Hint lists retain `150.0.7871.124`. GPU profiles
+carry their allowed device classes, WebGL extension list, and exact WebGPU
+adapter so generation and validation bind the full OS+class record.
+
+[`conformance/v2`](conformance/v2) is the current golden/signing vector.
+[`conformance/v1`](conformance/v1) is an immutable legacy vector: tests keep its
+bytes and signature valid, but current semantic ingest intentionally uses v2
+because provenance and target behavior changed.
+
 Reload verification checks the raw signed JSON before typed conversion, binds
 the trust-store routing `keyId` into the Ed25519 input, validates the strict
 schema and semantics, and deterministically rebuilds the body from its
@@ -55,6 +67,28 @@ resigning because `datasetSha256` fails closed.
 The request's region is not copied into the signed body as a separate field.
 Replay recovers it from the exact bound dataset's `timezoneToRegion` mapping;
 the mapping must therefore be one-to-one for emitted timezones.
+
+The independent Node conformance layer mirrors the non-structural Rust
+`validate()` rules for complete current configs, including fail-closed exact
+engine-target selection. The JSON Schema remains authoritative for full
+structural/type/enum/format validation; the dependency-free score CLI duplicates
+only minimum root-envelope completeness to prevent a malformed config from
+downgrading into the tolerant path. Unauthorized-mutation detection remains
+Ed25519's job. Runtime observations continue to use tolerant real-world checks
+rather than generation-strict equality.
+
+`verify_reproducible()` remains the exact sampler oracle. Semantic validation
+can accept any allowed hardware candidate, core/superset-valid font set,
+same-region timezone, non-empty unique media IDs, or internally consistent
+rarity value. Replay additionally requires the exact HMAC-selected candidate,
+derived IDs, timezone, rarity score/reasons, policy fields, and every other
+emitted body value. Node does not reimplement that HMAC stream; fixed
+cross-language vectors plus Rust replay tests keep the boundary explicit.
+
+M1A currently performs one deterministic sampling attempt. It does not yet
+advance a deterministic attempt stream after validation or rarity rejection.
+Likewise, emitted noise configuration is one fixed policy; calibrated
+per-profile noise-shape variation and the fleet classifier remain M4 work.
 
 ## CLI
 

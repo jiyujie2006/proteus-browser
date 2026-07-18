@@ -3,11 +3,11 @@
 # Threat-vectors: V5
 # Upstream-risk: HIGH. Touches CDP/DevTools protocol handling and isolated-world evaluation; upstream DevTools changes are frequent. Second-highest-attention item after config-ingest.
 # Tests: v5-automation/runtime-enable-leak, v5-automation/no-cdp-artifacts
-# Status: PLACEHOLDER (M0). Implemented against a real Chromium tree in M1.
+# Target-milestone: M3
+# Status: BACKLOG
 #
-# This header is a valid, reviewable specification. The unified diff below is
-# empty in M0 (no Chromium checkout to diff against) and will be produced by
-# `git format-patch` against the pinned baseline (see ../../CHROMIUM_BASELINE)
-# during M1 implementation.
+# This file is a valid, reviewable M3 backlog specification. Its git-format
+# patch payload will be produced against the pinned baseline (see
+# ../../CHROMIUM_BASELINE) during M3 implementation.
 #
-# (no diff hunks yet — M0 placeholder)
+# (no diff hunks yet — M3 backlog placeholder)
